@@ -23,9 +23,7 @@ class Program
             .AddEnvironmentVariables()
             .Build();
 
-
-        if (string.IsNullOrWhiteSpace(apiKey))
-            throw new Exception("API KEY NOT FOUND");
+         
 
         // Setup DI
         var services = new ServiceCollection();
