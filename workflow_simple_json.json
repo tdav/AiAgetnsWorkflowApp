@@ -1,0 +1,34 @@
+{
+  "workflowType": "Magentic",
+  
+  "task": "Research the current state of renewable energy adoption globally and provide a summary with key statistics for 2024.",
+  
+  "manager": {
+    "modelId": "gpt-4",
+    "maxRoundCount": 5,
+    "maxStallCount": 2,
+    "maxResetCount": 1,
+    "enablePlanReview": false
+  },
+  
+  "agents": [
+    {
+      "name": "ResearchAgent",
+      "description": "Finds and gathers information from various sources",
+      "instructions": "You are a research specialist. Find reliable information and present it clearly.",
+      "modelId": "gpt-4",
+      "tools": [],
+      "metadata": {}
+    },
+    {
+      "name": "AnalystAgent",
+      "description": "Analyzes data and creates summaries",
+      "instructions": "You analyze information and create concise, well-structured summaries.",
+      "modelId": "gpt-4",
+      "tools": [],
+      "metadata": {}
+    }
+  ],
+  
+  "settings": {}
+}

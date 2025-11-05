@@ -1,0 +1,78 @@
+{
+  "workflowType": "Concurrent",
+  
+  "task": "Analyze the impact of artificial intelligence across different industries: healthcare, finance, education, and transportation. Each analysis should cover current adoption, benefits, challenges, and future outlook.",
+  
+  "orchestration": {
+    "concurrent": {
+      "participantAgents": [
+        "HealthcareAnalystAgent",
+        "FinanceAnalystAgent",
+        "EducationAnalystAgent",
+        "TransportAnalystAgent"
+      ],
+      "aggregationStrategy": "Merge"
+    }
+  },
+  
+  "agents": [
+    {
+      "name": "HealthcareAnalystAgent",
+      "description": "Analyzes AI impact in healthcare industry",
+      "instructions": "You are a healthcare industry analyst. Analyze how AI is transforming healthcare: diagnosis, treatment planning, drug discovery, patient care. Include specific examples, case studies, adoption rates, benefits (improved accuracy, efficiency), challenges (privacy, regulation, costs), and future trends. Provide data and statistics where possible.",
+      "modelId": "gpt-4",
+      "tools": [],
+      "metadata": {
+        "industry": "healthcare",
+        "expertise": "medical_technology"
+      }
+    },
+    {
+      "name": "FinanceAnalystAgent",
+      "description": "Analyzes AI impact in financial services",
+      "instructions": "You are a financial services analyst. Examine AI applications in finance: fraud detection, algorithmic trading, risk assessment, customer service, lending decisions. Discuss adoption by banks and fintech, benefits (speed, accuracy, cost reduction), challenges (bias, regulation, security), and emerging trends. Include relevant statistics and examples.",
+      "modelId": "gpt-4",
+      "tools": [],
+      "metadata": {
+        "industry": "finance",
+        "expertise": "fintech"
+      }
+    },
+    {
+      "name": "EducationAnalystAgent",
+      "description": "Analyzes AI impact in education sector",
+      "instructions": "You are an education technology specialist. Analyze AI in education: personalized learning, automated grading, intelligent tutoring systems, content creation, student assessment. Cover K-12, higher education, and corporate training. Discuss benefits (personalization, accessibility), challenges (equity, teacher roles), and future directions. Provide concrete examples.",
+      "modelId": "gpt-4",
+      "tools": [],
+      "metadata": {
+        "industry": "education",
+        "expertise": "edtech"
+      }
+    },
+    {
+      "name": "TransportAnalystAgent",
+      "description": "Analyzes AI impact in transportation",
+      "instructions": "You are a transportation industry expert. Examine AI in transportation: autonomous vehicles, traffic management, route optimization, predictive maintenance, logistics. Cover current state, major players, benefits (safety, efficiency), challenges (regulation, infrastructure, ethics), and future outlook. Include statistics and real-world implementations.",
+      "modelId": "gpt-4",
+      "tools": [],
+      "metadata": {
+        "industry": "transportation",
+        "expertise": "autonomous_systems"
+      }
+    }
+  ],
+  
+  "manager": {
+    "modelId": "gpt-4",
+    "maxRoundCount": 1,
+    "maxStallCount": 1,
+    "maxResetCount": 0,
+    "enablePlanReview": false
+  },
+  
+  "settings": {
+    "executionMode": "concurrent",
+    "aggregationType": "merge",
+    "timeout": "300"
+  }
+}

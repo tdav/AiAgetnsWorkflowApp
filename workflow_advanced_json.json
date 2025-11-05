@@ -1,0 +1,96 @@
+{
+  "workflowType": "Magentic",
+  
+  "task": "Create a comprehensive business plan for a SaaS startup that provides AI-powered code review tools. The plan should include: 1) Market analysis with competitor research, 2) Technical architecture proposal, 3) Financial projections for 3 years, 4) Go-to-market strategy, and 5) Risk assessment.",
+  
+  "manager": {
+    "modelId": "gpt-4",
+    "maxRoundCount": 15,
+    "maxStallCount": 4,
+    "maxResetCount": 3,
+    "enablePlanReview": true
+  },
+  
+  "agents": [
+    {
+      "name": "MarketResearchAgent",
+      "description": "Specialist in market analysis, competitor research, and industry trends",
+      "instructions": "You are a market research expert. Analyze market opportunities, identify competitors, assess market size, and identify key trends. Provide data-driven insights with sources when possible.",
+      "modelId": "gpt-4o-search-preview",
+      "tools": [],
+      "metadata": {
+        "priority": "critical",
+        "specialization": "market_analysis",
+        "department": "research"
+      }
+    },
+    {
+      "name": "TechnicalArchitectAgent",
+      "description": "Expert in software architecture and system design",
+      "instructions": "You are a senior software architect. Design scalable, secure, and efficient technical architectures. Consider cloud infrastructure, microservices, databases, APIs, and security. Provide diagrams and technical specifications.",
+      "modelId": "gpt-4",
+      "tools": [],
+      "metadata": {
+        "priority": "high",
+        "specialization": "architecture",
+        "department": "engineering"
+      }
+    },
+    {
+      "name": "FinancialAnalystAgent",
+      "description": "Financial modeling and projection specialist",
+      "instructions": "You are a financial analyst. Create detailed financial projections including revenue forecasts, cost structures, cash flow analysis, and break-even calculations. Use realistic assumptions and provide sensitivity analysis.",
+      "modelId": "gpt-4",
+      "tools": ["CodeInterpreter"],
+      "metadata": {
+        "priority": "critical",
+        "specialization": "financial_modeling",
+        "department": "finance"
+      }
+    },
+    {
+      "name": "MarketingStrategistAgent",
+      "description": "Go-to-market and marketing strategy expert",
+      "instructions": "You are a marketing strategist. Develop comprehensive go-to-market strategies including customer acquisition channels, pricing strategy, brand positioning, and growth tactics. Focus on B2B SaaS best practices.",
+      "modelId": "gpt-4",
+      "tools": [],
+      "metadata": {
+        "priority": "high",
+        "specialization": "marketing",
+        "department": "marketing"
+      }
+    },
+    {
+      "name": "RiskAnalystAgent",
+      "description": "Risk assessment and mitigation specialist",
+      "instructions": "You are a risk management expert. Identify potential risks (technical, market, financial, operational, legal) and propose mitigation strategies. Assess probability and impact of each risk.",
+      "modelId": "gpt-4",
+      "tools": [],
+      "metadata": {
+        "priority": "medium",
+        "specialization": "risk_management",
+        "department": "operations"
+      }
+    },
+    {
+      "name": "BusinessWriterAgent",
+      "description": "Professional business document writer and editor",
+      "instructions": "You are a professional business writer. Synthesize information from all sources into a cohesive, well-structured business plan. Use clear language, proper formatting, and executive-level communication style.",
+      "modelId": "gpt-4",
+      "tools": [],
+      "metadata": {
+        "priority": "medium",
+        "specialization": "documentation",
+        "department": "operations"
+      }
+    }
+  ],
+  
+  "settings": {
+    "timeoutSeconds": "600",
+    "retryAttempts": "3",
+    "environment": "production",
+    "outputFormat": "detailed",
+    "includeVisualization": "true"
+  }
+}

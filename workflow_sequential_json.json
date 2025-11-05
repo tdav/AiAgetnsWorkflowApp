@@ -1,0 +1,86 @@
+{
+  "workflowType": "Sequential",
+  
+  "task": "Create a comprehensive research report on quantum computing applications in cryptography. The report should include: current state of research, practical applications, security implications, and future trends.",
+  
+  "orchestration": {
+    "startAgent": "DataCollectorAgent",
+    "edges": [
+      {
+        "from": "DataCollectorAgent",
+        "to": "ResearchAnalystAgent",
+        "label": "Raw Data"
+      },
+      {
+        "from": "ResearchAnalystAgent",
+        "to": "SecurityExpertAgent",
+        "label": "Analysis Results"
+      },
+      {
+        "from": "SecurityExpertAgent",
+        "to": "ReportWriterAgent",
+        "label": "Security Assessment"
+      }
+    ]
+  },
+  
+  "agents": [
+    {
+      "name": "DataCollectorAgent",
+      "description": "Collects and organizes information from various sources",
+      "instructions": "You are a data collection specialist. Gather comprehensive information about quantum computing and cryptography from reliable sources. Focus on recent developments, research papers, and industry news. Organize the data in a structured format for analysis.",
+      "modelId": "gpt-4o-search-preview",
+      "tools": [],
+      "metadata": {
+        "stage": "collection",
+        "priority": "high"
+      }
+    },
+    {
+      "name": "ResearchAnalystAgent",
+      "description": "Analyzes collected data and identifies key insights",
+      "instructions": "You are a research analyst. Analyze the collected data to identify patterns, trends, and key insights. Evaluate the quality of sources, extract relevant information, and synthesize findings. Focus on practical applications and real-world impact.",
+      "modelId": "gpt-4",
+      "tools": [],
+      "metadata": {
+        "stage": "analysis",
+        "priority": "high"
+      }
+    },
+    {
+      "name": "SecurityExpertAgent",
+      "description": "Evaluates security implications and risks",
+      "instructions": "You are a cybersecurity expert. Assess the security implications of quantum computing on cryptography. Identify potential vulnerabilities, evaluate risk levels, and recommend mitigation strategies. Consider both current and future threats.",
+      "modelId": "gpt-4",
+      "tools": [],
+      "metadata": {
+        "stage": "security_assessment",
+        "priority": "critical"
+      }
+    },
+    {
+      "name": "ReportWriterAgent",
+      "description": "Synthesizes all information into a comprehensive report",
+      "instructions": "You are a professional technical writer. Create a well-structured, comprehensive report that synthesizes all previous findings. Use clear language, proper formatting, and include executive summary, detailed analysis, conclusions, and recommendations. Make it suitable for both technical and non-technical audiences.",
+      "modelId": "gpt-4",
+      "tools": [],
+      "metadata": {
+        "stage": "documentation",
+        "priority": "high"
+      }
+    }
+  ],
+  
+  "manager": {
+    "modelId": "gpt-4",
+    "maxRoundCount": 1,
+    "maxStallCount": 1,
+    "maxResetCount": 0,
+    "enablePlanReview": false
+  },
+  
+  "settings": {
+    "executionMode": "sequential",
+    "allowParallelization": "false"
+  }
+}

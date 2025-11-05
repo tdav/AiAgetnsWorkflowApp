@@ -1,0 +1,44 @@
+{
+  "workflowType": "Magentic",
+  
+  "task": "I am preparing a report on the energy efficiency of different machine learning model architectures. Compare the estimated training and inference energy consumption of ResNet-50, BERT-base, and GPT-2 on standard datasets (e.g., ImageNet for ResNet, GLUE for BERT, WebText for GPT-2). Then, estimate the CO2 emissions associated with each, assuming training on an Azure Standard_NC6s_v3 VM for 24 hours. Provide tables for clarity, and recommend the most energy-efficient model per task type (image classification, text classification, and text generation).",
+  
+  "manager": {
+    "modelId": "gpt-4",
+    "maxRoundCount": 10,
+    "maxStallCount": 3,
+    "maxResetCount": 2,
+    "enablePlanReview": false
+  },
+  
+  "agents": [
+    {
+      "name": "ResearcherAgent",
+      "description": "Specialist in research and information gathering",
+      "instructions": "You are a Researcher. You find information without additional computation or quantitative analysis. Focus on gathering facts, statistics, and relevant documentation.",
+      "modelId": "gpt-4o-search-preview",
+      "tools": [],
+      "metadata": {
+        "priority": "high",
+        "specialization": "information_gathering"
+      }
+    },
+    {
+      "name": "CoderAgent",
+      "description": "A helpful assistant that writes and executes code to process and analyze data",
+      "instructions": "You solve questions using code. Please provide detailed analysis and computation process. Write clean, well-documented code with proper error handling.",
+      "modelId": "gpt-4",
+      "tools": ["CodeInterpreter"],
+      "metadata": {
+        "priority": "high",
+        "specialization": "data_analysis"
+      }
+    }
+  ],
+  
+  "settings": {
+    "timeoutSeconds": "300",
+    "retryAttempts": "3",
+    "environment": "production"
+  }
+}

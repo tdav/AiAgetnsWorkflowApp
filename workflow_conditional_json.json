@@ -1,0 +1,160 @@
+{
+  "workflowType": "Conditional",
+  
+  "task": "Process a customer support ticket: analyze the issue, determine its type (technical, billing, general inquiry), route to appropriate specialist, and generate a response.",
+  
+  "orchestration": {
+    "startAgent": "TicketAnalyzerAgent",
+    "edges": [
+      {
+        "from": "TicketAnalyzerAgent",
+        "to": "TicketClassifierAgent",
+        "label": "Analysis Complete"
+      }
+    ],
+    "conditionalEdges": [
+      {
+        "from": "TicketClassifierAgent",
+        "toOptions": [
+          "TechnicalSupportAgent",
+          "BillingSupportAgent",
+          "GeneralInquiryAgent"
+        ],
+        "selectionFunction": "classify_ticket_type",
+        "parameters": {
+          "confidenceThreshold": 0.8,
+          "allowMultiple": false
+        }
+      },
+      {
+        "from": "TechnicalSupportAgent",
+        "toOptions": [
+          "ResponseGeneratorAgent",
+          "EscalationAgent"
+        ],
+        "selectionFunction": "check_resolution_status",
+        "parameters": {
+          "escalateIfComplex": true
+        }
+      },
+      {
+        "from": "BillingSupportAgent",
+        "toOptions": [
+          "ResponseGeneratorAgent"
+        ],
+        "selectionFunction": "always_to_response",
+        "parameters": {}
+      },
+      {
+        "from": "GeneralInquiryAgent",
+        "toOptions": [
+          "ResponseGeneratorAgent"
+        ],
+        "selectionFunction": "always_to_response",
+        "parameters": {}
+      },
+      {
+        "from": "EscalationAgent",
+        "toOptions": [
+          "ResponseGeneratorAgent"
+        ],
+        "selectionFunction": "always_to_response",
+        "parameters": {}
+      }
+    ]
+  },
+  
+  "agents": [
+    {
+      "name": "TicketAnalyzerAgent",
+      "description": "Analyzes customer support ticket content",
+      "instructions": "You are a ticket analysis expert. Carefully read and analyze the customer's issue. Extract key information: problem description, customer sentiment, urgency level, relevant details (account info, error messages, etc.). Provide a structured summary for classification.",
+      "modelId": "gpt-4",
+      "tools": [],
+      "metadata": {
+        "stage": "analysis",
+        "priority": "high"
+      }
+    },
+    {
+      "name": "TicketClassifierAgent",
+      "description": "Classifies ticket type and determines routing",
+      "instructions": "You are a ticket classification specialist. Based on the analysis, classify the ticket into one of three categories: 'technical' (software issues, bugs, errors), 'billing' (payments, invoices, subscriptions), or 'general' (questions, feedback, information requests). Output your classification with confidence level.",
+      "modelId": "gpt-4",
+      "tools": [],
+      "metadata": {
+        "stage": "classification",
+        "decisionMaker": true
+      }
+    },
+    {
+      "name": "TechnicalSupportAgent",
+      "description": "Handles technical issues and troubleshooting",
+      "instructions": "You are a technical support specialist. Diagnose technical problems, provide step-by-step solutions, suggest workarounds, and determine if the issue requires escalation to engineering. Be clear, detailed, and helpful. If the issue is too complex or requires code changes, indicate need for escalation.",
+      "modelId": "gpt-4",
+      "tools": ["CodeInterpreter"],
+      "metadata": {
+        "stage": "resolution",
+        "specialization": "technical"
+      }
+    },
+    {
+      "name": "BillingSupportAgent",
+      "description": "Handles billing and payment issues",
+      "instructions": "You are a billing specialist. Address payment issues, explain charges, process refunds, update billing information, and resolve subscription problems. Be empathetic, clear about policies, and provide specific solutions. Include relevant account details in your response.",
+      "modelId": "gpt-4",
+      "tools": [],
+      "metadata": {
+        "stage": "resolution",
+        "specialization": "billing"
+      }
+    },
+    {
+      "name": "GeneralInquiryAgent",
+      "description": "Handles general questions and information requests",
+      "instructions": "You are a customer service representative. Answer general questions about products, services, features, policies, and procedures. Provide helpful information, links to resources, and guidance. Be friendly, professional, and informative.",
+      "modelId": "gpt-4",
+      "tools": [],
+      "metadata": {
+        "stage": "resolution",
+        "specialization": "general"
+      }
+    },
+    {
+      "name": "EscalationAgent",
+      "description": "Handles escalated technical issues",
+      "instructions": "You are a senior technical specialist. Handle escalated complex technical issues that require engineering involvement. Document the issue thoroughly, assess priority, create a detailed technical report, and prepare information for the engineering team. Provide interim response to customer about next steps and timeline.",
+      "modelId": "gpt-4",
+      "tools": ["CodeInterpreter"],
+      "metadata": {
+        "stage": "escalation",
+        "priority": "critical"
+      }
+    },
+    {
+      "name": "ResponseGeneratorAgent",
+      "description": "Generates final customer-facing response",
+      "instructions": "You are a professional communication specialist. Create a polished, customer-friendly response based on all previous agent work. Use appropriate tone (empathetic for problems, helpful for questions), be clear and concise, include specific action items or solutions, provide next steps if needed, and close professionally. Format the response professionally.",
+      "modelId": "gpt-4",
+      "tools": [],
+      "metadata": {
+        "stage": "finalization",
+        "priority": "high"
+      }
+    }
+  ],
+  
+  "manager": {
+    "modelId": "gpt-4",
+    "maxRoundCount": 8,
+    "maxStallCount": 2,
+    "maxResetCount": 1,
+    "enablePlanReview": false
+  },
+  
+  "settings": {
+    "executionMode": "conditional",
+    "enableDynamicRouting": "true",
+    "logDecisions": "true"
+  }
+}
