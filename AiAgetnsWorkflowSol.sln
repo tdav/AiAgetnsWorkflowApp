@@ -1,9 +1,9 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 18
-VisualStudioVersion = 18.0.11123.170 d18.0
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36623.8 d17.14
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MagenticWorkflowApp", "MagenticWorkflowApp.csproj", "{54E16E72-1ADD-45D8-97B1-19FEDF5F177E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AiAgetnsWorkflow", "src\AiAgetnsWorkflow.csproj", "{DFAD2031-D4E8-7BA6-BB3E-E09DEC08C7BA}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -11,10 +11,10 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{54E16E72-1ADD-45D8-97B1-19FEDF5F177E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{54E16E72-1ADD-45D8-97B1-19FEDF5F177E}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{54E16E72-1ADD-45D8-97B1-19FEDF5F177E}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{54E16E72-1ADD-45D8-97B1-19FEDF5F177E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DFAD2031-D4E8-7BA6-BB3E-E09DEC08C7BA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DFAD2031-D4E8-7BA6-BB3E-E09DEC08C7BA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DFAD2031-D4E8-7BA6-BB3E-E09DEC08C7BA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DFAD2031-D4E8-7BA6-BB3E-E09DEC08C7BA}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
