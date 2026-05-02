@@ -39,6 +39,7 @@ public class OrchestratorWiringTests
 
         var sut = new MagenticWorkflowOrchestrator(
             NullLogger<MagenticWorkflowOrchestrator>.Instance,
+            NullLoggerFactory.Instance,
             loader, visualizer, cfg, pool, hosted, registry);
 
         var act = () => sut.ExecuteWorkflowFromJsonAsync("any.json");
@@ -65,6 +66,7 @@ public class OrchestratorWiringTests
 
         var sut = new MagenticWorkflowOrchestrator(
             NullLogger<MagenticWorkflowOrchestrator>.Instance,
+            NullLoggerFactory.Instance,
             loader, visualizer, cfg, pool, hosted, registry);
 
         Func<Task> act = () => sut.ExecuteWorkflowFromJsonAsync("any.json");

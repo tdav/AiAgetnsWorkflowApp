@@ -26,7 +26,10 @@ namespace MagenticWorkflowApp.Services;
 /// </summary>
 public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
 {
+    private const int MagenticTimeoutMinutes = 5;
+
     private readonly ILogger<MagenticWorkflowOrchestrator> _logger;
+    private readonly ILoggerFactory _loggerFactory;
     private readonly IWorkflowJsonLoader _jsonLoader;
     private readonly IWorkflowVisualizer _visualizer;
     private readonly IConfiguration _configuration;
@@ -36,6 +39,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
 
     public MagenticWorkflowOrchestrator(
         ILogger<MagenticWorkflowOrchestrator> logger,
+        ILoggerFactory loggerFactory,
         IWorkflowJsonLoader jsonLoader,
         IWorkflowVisualizer visualizer,
         IConfiguration configuration,
@@ -44,6 +48,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         IAgentPluginRegistry pluginRegistry)
     {
         _logger = logger;
+        _loggerFactory = loggerFactory;
         _jsonLoader = jsonLoader;
         _visualizer = visualizer;
         _configuration = configuration;
@@ -351,11 +356,10 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
                     ConsoleColor.Yellow);
                 return ValueTask.CompletedTask;
             },
-            LoggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(
-                b => b.AddConsole()),
+            LoggerFactory = _loggerFactory,
         };
 
-        var runtime = new InProcessRuntime();
+        await using var runtime = new InProcessRuntime();
         await runtime.StartAsync(default).ConfigureAwait(false);
 
         try
@@ -365,7 +369,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
                 .ConfigureAwait(false);
 
             var output = await result
-                .GetValueAsync(TimeSpan.FromMinutes(5), default)
+                .GetValueAsync(TimeSpan.FromMinutes(MagenticTimeoutMinutes), default)
                 .ConfigureAwait(false);
 
             ShowFinalResult(output ?? "(no output)");
@@ -373,7 +377,6 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         finally
         {
             await runtime.StopAsync(default).ConfigureAwait(false);
-            await runtime.DisposeAsync().ConfigureAwait(false);
         }
     }
 
