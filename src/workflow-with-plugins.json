@@ -1,0 +1,24 @@
+{
+  "workflowType": "Sequential",
+  "task": "Tell me what time it is and the weather in Moscow.",
+  "agents": [
+    {
+      "name": "ClockAgent",
+      "description": "Knows current time",
+      "instructions": "Use TimePlugin tools.",
+      "modelId": "gpt-4",
+      "plugins": ["TimePlugin"]
+    },
+    {
+      "name": "WeatherAgent",
+      "description": "Reports weather",
+      "instructions": "Use WeatherPlugin tools.",
+      "modelId": "gpt-4",
+      "plugins": ["WeatherPlugin"]
+    }
+  ],
+  "orchestration": {
+    "startAgent": "ClockAgent",
+    "edges": [{ "from": "ClockAgent", "to": "WeatherAgent" }]
+  }
+}

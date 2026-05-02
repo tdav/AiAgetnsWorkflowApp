@@ -1,0 +1,25 @@
+{
+  "workflowType": "Sequential",
+  "task": "List files in the data directory.",
+  "agents": [
+    {
+      "name": "FsAgent",
+      "description": "Reads filesystem",
+      "instructions": "Use the filesystem MCP tools to answer.",
+      "modelId": "gpt-4",
+      "mcpServers": ["filesystem"]
+    }
+  ],
+  "orchestration": {
+    "startAgent": "FsAgent",
+    "edges": []
+  },
+  "mcpServers": [
+    {
+      "name": "filesystem",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "${MCP_FS_ROOT}"]
+    }
+  ]
+}
