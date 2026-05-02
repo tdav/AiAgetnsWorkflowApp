@@ -27,6 +27,7 @@
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.7" />
 		<PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.7" />
 		<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.7" />
+		<PackageReference Include="ModelContextProtocol" Version="1.2.0" />
 		
 		<!-- Явное обновление для устранения уязвимости GHSA-g94r-2vxg-569j -->
 		<PackageReference Include="OpenTelemetry.Api" Version="1.15.3" />
