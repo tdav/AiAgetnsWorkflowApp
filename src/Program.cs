@@ -68,5 +68,9 @@ class Program
         services.AddSingleton<IWorkflowOrchestrator, MagenticWorkflowOrchestrator>();
         services.AddSingleton<IWorkflowJsonLoader, WorkflowJsonLoader>();
         services.AddSingleton<IWorkflowVisualizer, WorkflowVisualizer>();
+        services.AddSingleton<IMcpClientPool, McpClientPool>();
+        services.AddSingleton<IHostedToolFactory, HostedToolFactory>();
+        services.AddSingleton<IAgentPluginRegistry>(_ =>
+            new AgentPluginRegistry(Array.Empty<IAgentPlugin>()));
     }
 }

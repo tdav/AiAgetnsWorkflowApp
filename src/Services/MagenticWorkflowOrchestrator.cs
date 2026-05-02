@@ -1,15 +1,16 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
+using MagenticWorkflowApp.Exceptions;
 using MagenticWorkflowApp.Interfaces;
 using MagenticWorkflowApp.Models;
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-
-// NOTE: Uncomment these when you have the actual NuGet packages installed:
-// using Microsoft.Agents.AI;
-// using Microsoft.Agents.AI.Workflows;
-// using Microsoft.Agents.OpenAI;
+using OpenAI;
 
 namespace MagenticWorkflowApp.Services;
 
@@ -22,17 +23,26 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
     private readonly IWorkflowJsonLoader _jsonLoader;
     private readonly IWorkflowVisualizer _visualizer;
     private readonly IConfiguration _configuration;
+    private readonly IMcpClientPool _mcpPool;
+    private readonly IHostedToolFactory _hostedFactory;
+    private readonly IAgentPluginRegistry _pluginRegistry;
 
     public MagenticWorkflowOrchestrator(
         ILogger<MagenticWorkflowOrchestrator> logger,
         IWorkflowJsonLoader jsonLoader,
         IWorkflowVisualizer visualizer,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IMcpClientPool mcpPool,
+        IHostedToolFactory hostedFactory,
+        IAgentPluginRegistry pluginRegistry)
     {
         _logger = logger;
         _jsonLoader = jsonLoader;
         _visualizer = visualizer;
         _configuration = configuration;
+        _mcpPool = mcpPool;
+        _hostedFactory = hostedFactory;
+        _pluginRegistry = pluginRegistry;
     }
 
     public async Task ExecuteWorkflowFromJsonAsync(string jsonFilePath)
@@ -42,6 +52,10 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
 
         // Visualize workflow before execution
         _visualizer.VisualizeWorkflow(config);
+
+        // Validate plugin references and register MCP servers
+        ValidatePluginReferences(config);
+        await _mcpPool.RegisterServersAsync(config.McpServers).ConfigureAwait(false);
 
         // Get API keys from configuration
         var openAiApiKey = _configuration["OpenAI:ApiKey"];
@@ -497,5 +511,68 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         Console.Write($"[{source}] ");
         Console.ResetColor();
         Console.WriteLine(message);
+    }
+
+    private async Task<Dictionary<string, AIAgent>> CreateAgentsFromConfigurationAsync(
+        WorkflowConfiguration config, string? openAiApiKey, string? azureEndpoint, CancellationToken ct)
+    {
+        var agents = new Dictionary<string, AIAgent>(StringComparer.Ordinal);
+
+        foreach (var agentConfig in config.Agents)
+        {
+            var hostedTools = _hostedFactory.Create(agentConfig.Tools);
+            var mcpTools = await _mcpPool.GetToolsAsync(agentConfig.McpServers, ct).ConfigureAwait(false);
+            var pluginTools = ResolvePluginTools(agentConfig);
+
+            var allTools = hostedTools.Concat(mcpTools).Concat(pluginTools).ToArray();
+
+            _logger.LogInformation(
+                "Agent {Agent} resolved tools: hosted={H}, mcp={M}, plugins={P}",
+                agentConfig.Name, hostedTools.Count, mcpTools.Count, pluginTools.Count);
+
+            var chatClient = BuildChatClient(agentConfig.ModelId, openAiApiKey, azureEndpoint);
+            agents[agentConfig.Name] = chatClient.AsAIAgent(
+                instructions: agentConfig.Instructions,
+                name: agentConfig.Name,
+                description: agentConfig.Description,
+                tools: allTools);
+        }
+        return agents;
+    }
+
+    private IReadOnlyList<AITool> ResolvePluginTools(AgentConfiguration agentConfig)
+    {
+        if (agentConfig.Plugins.Count == 0) return Array.Empty<AITool>();
+        var tools = new List<AITool>();
+        foreach (var name in agentConfig.Plugins)
+        {
+            if (!_pluginRegistry.TryGet(name, out var plugin))
+                throw new WorkflowValidationException(
+                    $"Agent '{agentConfig.Name}' references unknown plugin '{name}'");
+            tools.AddRange(plugin!.AsAITools());
+        }
+        return tools;
+    }
+
+    private static IChatClient BuildChatClient(string modelId, string? openAiApiKey, string? azureEndpoint)
+    {
+        if (!string.IsNullOrWhiteSpace(azureEndpoint))
+        {
+            // Azure.AI.OpenAI пакет ещё не подключён к проекту — вернёмся к этому в Task 13/14.
+            throw new NotSupportedException(
+                "Azure OpenAI endpoint is configured, but Azure.AI.OpenAI package is not yet referenced. " +
+                "Will be enabled in upcoming tasks.");
+        }
+        var openAi = new OpenAIClient(openAiApiKey!);
+        return openAi.GetChatClient(modelId).AsIChatClient();
+    }
+
+    private void ValidatePluginReferences(WorkflowConfiguration config)
+    {
+        foreach (var agent in config.Agents)
+            foreach (var name in agent.Plugins)
+                if (!_pluginRegistry.TryGet(name, out _))
+                    throw new WorkflowValidationException(
+                        $"Agent '{agent.Name}' references unknown plugin '{name}'");
     }
 }
