@@ -31,7 +31,7 @@ internal static class Program
             var orchestrator = serviceProvider.GetRequiredService<IWorkflowOrchestrator>();
             var path = args.Length > 0 ? args[0] : "workflow-config.json";
             Console.WriteLine($"Loading workflow configuration from: {path}\n");
-            await orchestrator.ExecuteWorkflowFromJsonAsync(path);
+            await orchestrator.ExecuteWorkflowFromJsonAsync(path, cts.Token);
             Console.WriteLine("\n=== Workflow Execution Completed ===");
             return 0;
         }

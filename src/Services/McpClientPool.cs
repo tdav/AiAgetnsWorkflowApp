@@ -19,7 +19,7 @@ public sealed class McpClientPool : IMcpClientPool
     private readonly Dictionary<string, McpServerConfiguration> configs = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IMcpClient> clients = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim initLock = new(1, 1);
-    private bool disposed;
+    private volatile bool disposed;
 
     public McpClientPool(
         ILogger<McpClientPool> logger,
@@ -64,10 +64,6 @@ public sealed class McpClientPool : IMcpClientPool
 
     private async Task<IMcpClient> GetOrCreateClientAsync(string name, CancellationToken ct)
     {
-        if (clients.TryGetValue(name, out var existing))
-        {
-            return existing;
-        }
         if (!configs.TryGetValue(name, out var cfg))
         {
             throw new KeyNotFoundException($"MCP server '{name}' is not registered");
@@ -76,7 +72,8 @@ public sealed class McpClientPool : IMcpClientPool
         await initLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            if (clients.TryGetValue(name, out existing))
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (clients.TryGetValue(name, out var existing))
             {
                 return existing;
             }
@@ -135,8 +132,25 @@ public sealed class McpClientPool : IMcpClientPool
         {
             return;
         }
-        disposed = true;
-        foreach (var c in clients.Values)
+
+        IMcpClient[] snapshot;
+        await initLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (disposed)
+            {
+                return;
+            }
+            disposed = true;
+            snapshot = clients.Values.ToArray();
+            clients.Clear();
+        }
+        finally
+        {
+            initLock.Release();
+        }
+
+        foreach (var c in snapshot)
         {
             try
             {
@@ -147,7 +161,6 @@ public sealed class McpClientPool : IMcpClientPool
                 logger.LogWarning(ex, "Disposing MCP client failed");
             }
         }
-        clients.Clear();
         initLock.Dispose();
     }
 

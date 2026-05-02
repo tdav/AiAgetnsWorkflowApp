@@ -57,17 +57,23 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         _pluginRegistry = pluginRegistry;
     }
 
-    public async Task ExecuteWorkflowFromJsonAsync(string jsonFilePath)
+    public async Task ExecuteWorkflowFromJsonAsync(string jsonFilePath, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         // Load configuration from JSON
-        var config = await _jsonLoader.LoadConfigurationAsync(jsonFilePath);
+        var config = await _jsonLoader.LoadConfigurationAsync(jsonFilePath).ConfigureAwait(false);
+
+        cancellationToken.ThrowIfCancellationRequested();
 
         // Visualize workflow before execution
         _visualizer.VisualizeWorkflow(config);
 
         // Validate plugin references and register MCP servers
         ValidatePluginReferences(config);
-        await _mcpPool.RegisterServersAsync(config.McpServers).ConfigureAwait(false);
+        await _mcpPool.RegisterServersAsync(config.McpServers, cancellationToken).ConfigureAwait(false);
+
+        cancellationToken.ThrowIfCancellationRequested();
 
         // Get API keys from configuration
         var openAiApiKey = _configuration["OpenAI:ApiKey"];
@@ -79,12 +85,12 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
             Console.WriteLine("⚠️  Warning: No OpenAI or Azure OpenAI configuration found!");
             Console.WriteLine("   This is a DEMO mode - simulating workflow execution.");
             Console.ResetColor();
-            await SimulateWorkflowExecutionAsync(config);
+            await SimulateWorkflowExecutionAsync(config).ConfigureAwait(false);
             return;
         }
 
         // Execute actual workflow based on type
-        await ExecuteActualWorkflowAsync(config, openAiApiKey, azureOpenAiEndpoint);
+        await ExecuteActualWorkflowAsync(config, openAiApiKey, azureOpenAiEndpoint).ConfigureAwait(false);
     }
 
     private async Task ExecuteActualWorkflowAsync(
@@ -180,10 +186,16 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
             .RunStreamingAsync(workflow, config.Task)
             .ConfigureAwait(false);
 
+        var errors = new List<Exception>();
         await foreach (var evt in run.WatchStreamAsync().ConfigureAwait(false))
         {
-            HandleWorkflowEvent(evt);
+            var error = HandleWorkflowEvent(evt);
+            if (error is not null)
+            {
+                errors.Add(error);
+            }
         }
+        ThrowIfErrors(errors);
     }
 
     private async Task ExecuteConcurrentWorkflowAsync(
@@ -222,10 +234,16 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
             .RunStreamingAsync(workflow, config.Task)
             .ConfigureAwait(false);
 
+        var errors = new List<Exception>();
         await foreach (var evt in run.WatchStreamAsync().ConfigureAwait(false))
         {
-            HandleWorkflowEvent(evt);
+            var error = HandleWorkflowEvent(evt);
+            if (error is not null)
+            {
+                errors.Add(error);
+            }
         }
+        ThrowIfErrors(errors);
     }
 
     private async Task ExecuteConditionalWorkflowAsync(
@@ -295,10 +313,16 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
             .RunStreamingAsync(workflow, config.Task)
             .ConfigureAwait(false);
 
+        var errors = new List<Exception>();
         await foreach (var evt in run.WatchStreamAsync().ConfigureAwait(false))
         {
-            HandleWorkflowEvent(evt);
+            var error = HandleWorkflowEvent(evt);
+            if (error is not null)
+            {
+                errors.Add(error);
+            }
         }
+        ThrowIfErrors(errors);
     }
 
     private async Task ExecuteMagenticWorkflowAsync(
@@ -600,7 +624,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
     /// Унифицированная обработка событий workflow из Microsoft.Agents.AI.Workflows 1.3.0.
     /// Будет вызываться из Execute*WorkflowAsync методов в задачах 14-17.
     /// </summary>
-    private void HandleWorkflowEvent(WorkflowEvent evt)
+    private Exception? HandleWorkflowEvent(WorkflowEvent evt)
     {
         switch (evt)
         {
@@ -609,29 +633,42 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
                     $"AGENT:{a.Update?.AuthorName ?? a.ExecutorId ?? "?"}",
                     a.Update?.Text ?? string.Empty,
                     ConsoleColor.Yellow);
-                break;
+                return null;
             case AgentResponseEvent r:
                 LogEvent(
                     $"AGENT:{r.ExecutorId ?? "?"}",
                     r.Response?.Text ?? "(empty response)",
                     ConsoleColor.Green);
-                break;
+                return null;
             case ExecutorFailedEvent ef:
-                LogEvent(
-                    $"EXECUTOR:{ef.ExecutorId ?? "?"}",
-                    (ef.Data as Exception)?.Message ?? "executor failed",
-                    ConsoleColor.Red);
-                break;
+                var execEx = ef.Data as Exception
+                    ?? new InvalidOperationException($"Executor '{ef.ExecutorId}' failed");
+                LogEvent($"EXECUTOR:{ef.ExecutorId ?? "?"}", execEx.Message, ConsoleColor.Red);
+                return execEx;
             case WorkflowErrorEvent e:
-                LogEvent("ERROR", e.Exception?.Message ?? "unknown", ConsoleColor.Red);
-                break;
+                var workflowEx = e.Exception ?? new InvalidOperationException("Unknown workflow error");
+                LogEvent("ERROR", workflowEx.Message, ConsoleColor.Red);
+                return workflowEx;
             case WorkflowOutputEvent o:
                 ShowFinalResult(o.Data?.ToString() ?? "(no result)");
-                break;
+                return null;
             default:
                 LogEvent("WORKFLOW", evt.GetType().Name, ConsoleColor.Cyan);
-                break;
+                return null;
         }
+    }
+
+    private static void ThrowIfErrors(List<Exception> errors)
+    {
+        if (errors.Count == 0)
+        {
+            return;
+        }
+        if (errors.Count == 1)
+        {
+            throw new InvalidOperationException("Workflow execution failed", errors[0]);
+        }
+        throw new AggregateException("Workflow execution failed with multiple errors", errors);
     }
 
     private async Task<Dictionary<string, AIAgent>> CreateAgentsFromConfigurationAsync(

@@ -5,5 +5,5 @@ namespace MagenticWorkflowApp.Interfaces;
 /// </summary>
 public interface IWorkflowOrchestrator
 {
-    Task ExecuteWorkflowFromJsonAsync(string jsonFilePath);
+    Task ExecuteWorkflowFromJsonAsync(string jsonFilePath, CancellationToken cancellationToken = default);
 }
