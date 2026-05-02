@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using MagenticWorkflowApp.Interfaces;
 
 namespace MagenticWorkflowApp.Services;
@@ -16,7 +17,7 @@ public sealed class AgentPluginRegistry : IAgentPluginRegistry
         }
     }
 
-    public bool TryGet(string name, out IAgentPlugin? plugin)
+    public bool TryGet(string name, [NotNullWhen(true)] out IAgentPlugin? plugin)
     {
         if (byName.TryGetValue(name, out var found))
         {
