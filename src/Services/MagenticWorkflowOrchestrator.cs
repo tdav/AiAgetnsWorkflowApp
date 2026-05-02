@@ -7,6 +7,7 @@ using MagenticWorkflowApp.Exceptions;
 using MagenticWorkflowApp.Interfaces;
 using MagenticWorkflowApp.Models;
 using Microsoft.Agents.AI;
+using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -511,6 +512,44 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         Console.Write($"[{source}] ");
         Console.ResetColor();
         Console.WriteLine(message);
+    }
+
+    /// <summary>
+    /// Унифицированная обработка событий workflow из Microsoft.Agents.AI.Workflows 1.3.0.
+    /// Будет вызываться из Execute*WorkflowAsync методов в задачах 14-17.
+    /// </summary>
+    private void HandleWorkflowEvent(WorkflowEvent evt)
+    {
+        switch (evt)
+        {
+            case AgentResponseUpdateEvent a:
+                LogEvent(
+                    $"AGENT:{a.Update?.AuthorName ?? a.ExecutorId ?? "?"}",
+                    a.Update?.Text ?? string.Empty,
+                    ConsoleColor.Yellow);
+                break;
+            case AgentResponseEvent r:
+                LogEvent(
+                    $"AGENT:{r.ExecutorId ?? "?"}",
+                    r.Response?.Text ?? "(empty response)",
+                    ConsoleColor.Green);
+                break;
+            case ExecutorFailedEvent ef:
+                LogEvent(
+                    $"EXECUTOR:{ef.ExecutorId ?? "?"}",
+                    (ef.Data as Exception)?.Message ?? "executor failed",
+                    ConsoleColor.Red);
+                break;
+            case WorkflowErrorEvent e:
+                LogEvent("ERROR", e.Exception?.Message ?? "unknown", ConsoleColor.Red);
+                break;
+            case WorkflowOutputEvent o:
+                ShowFinalResult(o.Data?.ToString() ?? "(no result)");
+                break;
+            default:
+                LogEvent("WORKFLOW", evt.GetType().Name, ConsoleColor.Cyan);
+                break;
+        }
     }
 
     private async Task<Dictionary<string, AIAgent>> CreateAgentsFromConfigurationAsync(
