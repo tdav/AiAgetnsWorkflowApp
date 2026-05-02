@@ -161,6 +161,8 @@ public class WorkflowJsonLoader : IWorkflowJsonLoader
                     $"Unknown MCP transport '{s.Transport}' for server '{s.Name}'");
             }
 
+            s.Transport = t!;
+
             if (t == "stdio" && string.IsNullOrWhiteSpace(s.Command))
             {
                 throw new WorkflowValidationException(
