@@ -222,44 +222,72 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         string? openAiApiKey,
         string? azureEndpoint)
     {
-        /*
-         * CONDITIONAL WORKFLOW IMPLEMENTATION
-         * 
-         * var agents = CreateAgentsFromConfiguration(config, openAiApiKey);
-         * 
-         * var builder = new WorkflowBuilder()
-         *     .SetStartExecutor(agents[config.Orchestration.StartAgent]);
-         * 
-         * // Add regular edges
-         * foreach (var edge in config.Orchestration.Edges)
-         * {
-         *     builder.AddEdge(agents[edge.From], agents[edge.To]);
-         * }
-         * 
-         * // Add conditional edges
-         * foreach (var condEdge in config.Orchestration.ConditionalEdges)
-         * {
-         *     var targetAgents = condEdge.ToOptions.Select(name => agents[name]).ToArray();
-         *     Func<WorkflowContext, Task<string[]>> selectionFunc = CreateSelectionFunction(condEdge);
-         *     
-         *     builder.AddMultiSelectionEdgeGroup(
-         *         agents[condEdge.From],
-         *         targetAgents,
-         *         selectionFunc
-         *     );
-         * }
-         * 
-         * var workflow = builder.Build();
-         * 
-         * await foreach (var evt in workflow.RunStream(config.Task))
-         * {
-         *     HandleWorkflowEvent(evt);
-         * }
-         */
+        var agents = await CreateAgentsFromConfigurationAsync(
+            config, openAiApiKey, azureEndpoint, default).ConfigureAwait(false);
 
-        Console.WriteLine("📝 Conditional workflow execution would occur here.");
-        Console.WriteLine("   Install Microsoft.Agents.AI.Workflows package.\n");
-        await SimulateWorkflowExecutionAsync(config);
+        var startName = config.Orchestration?.StartAgent
+            ?? throw new WorkflowValidationException(
+                "Conditional workflow requires Orchestration.StartAgent");
+        var edges = config.Orchestration?.Edges ?? new List<EdgeConfiguration>();
+
+        // Pre-validate edge references: every From/To must map to a known agent.
+        foreach (var edge in edges)
+        {
+            if (!agents.ContainsKey(edge.From))
+                throw new WorkflowValidationException(
+                    $"Edge references unknown agent '{edge.From}'");
+            if (!agents.ContainsKey(edge.To))
+                throw new WorkflowValidationException(
+                    $"Edge references unknown agent '{edge.To}'");
+        }
+
+        // Selection-function support is deferred (см. Future work спеки).
+        // Если в JSON присутствуют conditionalEdges — выводим warning и идём только
+        // по статическим edges.
+        if (config.Orchestration?.ConditionalEdges?.Count > 0)
+        {
+            _logger.LogWarning(
+                "Conditional edges present but selection-function support is deferred — статическая часть workflow выполняется как есть.");
+        }
+
+        // SDK 1.3.0: WorkflowBuilder ctor takes start ExecutorBinding;
+        // AIAgent → ExecutorBinding via implicit conversion.
+        var builder = new WorkflowBuilder(agents[startName]);
+        foreach (var edge in edges)
+        {
+            builder.AddEdge(agents[edge.From], agents[edge.To]);
+        }
+
+        // Robust terminal detection: collect all leaves (nodes with no outgoing edge).
+        // Conditional (без selection-функций) сводится к статическому DAG —
+        // ожидаем ровно один листовой узел.
+        var fromSet = edges.Select(e => e.From).ToHashSet(StringComparer.Ordinal);
+        var leaves = config.Agents
+            .Select(a => a.Name)
+            .Where(n => !fromSet.Contains(n))
+            .ToList();
+
+        string terminalName;
+        if (leaves.Count == 1)
+            terminalName = leaves[0];
+        else if (leaves.Count == 0)
+            terminalName = startName;   // single-node graph (no edges)
+        else
+            throw new WorkflowValidationException(
+                $"Conditional workflow requires single terminal agent; found {leaves.Count}: {string.Join(", ", leaves)}");
+
+        builder.WithOutputFrom(agents[terminalName]);
+
+        var workflow = builder.Build();
+
+        await using var run = await InProcessExecution
+            .RunStreamingAsync(workflow, config.Task)
+            .ConfigureAwait(false);
+
+        await foreach (var evt in run.WatchStreamAsync().ConfigureAwait(false))
+        {
+            HandleWorkflowEvent(evt);
+        }
     }
 
     private async Task ExecuteMagenticWorkflowAsync(
