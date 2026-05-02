@@ -8,6 +8,7 @@ public sealed class HostedToolFactory : IHostedToolFactory
 {
     public IReadOnlyList<AITool> Create(IReadOnlyList<string> toolNames)
     {
+        ArgumentNullException.ThrowIfNull(toolNames);
         if (toolNames.Count == 0) return Array.Empty<AITool>();
 
         var result = new List<AITool>(toolNames.Count);

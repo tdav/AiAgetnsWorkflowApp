@@ -1,4 +1,5 @@
 using MagenticWorkflowApp.Services;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
 namespace AiAgetnsWorkflow.Tests.Tools;
@@ -16,7 +17,7 @@ public class HostedToolFactoryTests
     {
         var tools = new HostedToolFactory().Create(new[] { "CodeInterpreter" });
         tools.Should().ContainSingle();
-        tools[0].Should().BeAssignableTo<AITool>();
+        tools[0].Should().BeOfType<HostedCodeInterpreterTool>();
     }
 
     [Fact]
@@ -24,5 +25,12 @@ public class HostedToolFactoryTests
     {
         var act = () => new HostedToolFactory().Create(new[] { "Bogus" });
         act.Should().Throw<NotSupportedException>().WithMessage("*Bogus*");
+    }
+
+    [Fact]
+    public void Create_Null_Throws()
+    {
+        var act = () => new HostedToolFactory().Create(null!);
+        act.Should().Throw<ArgumentNullException>();
     }
 }
