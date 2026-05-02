@@ -53,6 +53,7 @@ dotnet run --project src/ workflow-conditional.json
 dotnet run --project src/ workflow-config.json          # Magentic
 dotnet run --project src/ workflow-with-plugins.json    # с C# плагинами
 dotnet run --project src/ workflow-with-mcp.json        # с MCP-сервером
+dotnet run --project src/ workflow-mixed.json           # комбо MCP + plugin + hosted tool
 ```
 
 ## 📁 Структура проекта
