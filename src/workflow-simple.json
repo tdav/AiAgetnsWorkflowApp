@@ -1,8 +1,8 @@
 {
   "workflowType": "Magentic",
-  
-  "task": "Research the current state of renewable energy adoption globally and provide a summary with key statistics for 2024.",
-  
+
+  "task": "Determine the current UTC time, then research the state of renewable energy adoption globally and provide a summary with key statistics for 2024.",
+
   "manager": {
     "modelId": "gpt-4",
     "maxRoundCount": 5,
@@ -10,25 +10,30 @@
     "maxResetCount": 1,
     "enablePlanReview": false
   },
-  
+
   "agents": [
+    {
+      "name": "TimekeeperAgent",
+      "description": "Provides current UTC timestamp for report metadata",
+      "instructions": "Use TimePlugin to get the current UTC time. Return only the timestamp.",
+      "modelId": "gpt-4",
+      "plugins": ["TimePlugin"]
+    },
     {
       "name": "ResearchAgent",
       "description": "Finds and gathers information from various sources",
-      "instructions": "You are a research specialist. Find reliable information and present it clearly.",
-      "modelId": "gpt-4",
-      "tools": [],
-      "metadata": {}
+      "instructions": "Find reliable information on renewable energy adoption. Present clearly with citations where possible.",
+      "modelId": "gpt-4"
     },
     {
       "name": "AnalystAgent",
       "description": "Analyzes data and creates summaries",
-      "instructions": "You analyze information and create concise, well-structured summaries.",
-      "modelId": "gpt-4",
-      "tools": [],
-      "metadata": {}
+      "instructions": "Analyze the gathered information and produce a concise, well-structured summary.",
+      "modelId": "gpt-4"
     }
   ],
-  
-  "settings": {}
+
+  "settings": {
+    "_note": "Magentic ignores plugins/tools in current version (warning logged). Demonstrates JSON shape only."
+  }
 }

@@ -1,0 +1,58 @@
+{
+  "workflowType": "Sequential",
+
+  "task": "Build a daily ops digest: stamp UTC time, list the latest files in the data directory via filesystem MCP, run light analysis on them, and write a short summary.",
+
+  "orchestration": {
+    "startAgent": "TimestamperAgent",
+    "edges": [
+      { "from": "TimestamperAgent", "to": "FileListerAgent", "label": "Timestamp" },
+      { "from": "FileListerAgent", "to": "AnalystAgent", "label": "File Index" },
+      { "from": "AnalystAgent", "to": "SummaryAgent", "label": "Analysis" }
+    ]
+  },
+
+  "agents": [
+    {
+      "name": "TimestamperAgent",
+      "description": "Records the run start time",
+      "instructions": "Call TimePlugin.GetCurrentTime once. Output the ISO-8601 timestamp on a single line.",
+      "modelId": "gpt-4",
+      "plugins": ["TimePlugin"]
+    },
+    {
+      "name": "FileListerAgent",
+      "description": "Lists the latest files via filesystem MCP",
+      "instructions": "Use the filesystem MCP tools to list files in the data directory. Sort by modification time descending. Return up to 20 entries.",
+      "modelId": "gpt-4",
+      "mcpServers": ["filesystem"]
+    },
+    {
+      "name": "AnalystAgent",
+      "description": "Performs light analysis on the file index",
+      "instructions": "Group entries by file extension and produce a small frequency table. Use CodeInterpreter for any tabular work.",
+      "modelId": "gpt-4",
+      "tools": ["CodeInterpreter"]
+    },
+    {
+      "name": "SummaryAgent",
+      "description": "Composes the daily digest",
+      "instructions": "Combine the timestamp, file list, and analysis into a 5-line daily digest in plain text.",
+      "modelId": "gpt-4"
+    }
+  ],
+
+  "mcpServers": [
+    {
+      "name": "filesystem",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "${MCP_FS_ROOT}"],
+      "startupTimeoutSeconds": 30
+    }
+  ],
+
+  "settings": {
+    "_note": "Hybrid example: plugin (TimePlugin), MCP tool (filesystem), hosted tool (CodeInterpreter), text-only agent. Set MCP_FS_ROOT env var before run."
+  }
+}
