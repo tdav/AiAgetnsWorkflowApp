@@ -25,4 +25,10 @@
     <ProjectReference Include="..\..\src\AiAgetnsWorkflow.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="TestData\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

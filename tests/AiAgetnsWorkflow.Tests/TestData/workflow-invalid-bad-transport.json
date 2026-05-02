@@ -1,0 +1,7 @@
+{
+  "workflowType": "Sequential",
+  "task": "demo",
+  "agents": [{ "name": "A", "description": "x", "instructions": "x", "modelId": "gpt-4" }],
+  "orchestration": { "startAgent": "A", "edges": [] },
+  "mcpServers": [{ "name": "x", "transport": "smtp", "command": "x" }]
+}

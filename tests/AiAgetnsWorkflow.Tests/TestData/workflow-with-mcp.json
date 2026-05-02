@@ -1,0 +1,31 @@
+{
+  "workflowType": "Sequential",
+  "task": "demo",
+  "agents": [
+    {
+      "name": "AgentA",
+      "description": "first",
+      "instructions": "do",
+      "modelId": "gpt-4",
+      "mcpServers": ["filesystem"]
+    },
+    {
+      "name": "AgentB",
+      "description": "second",
+      "instructions": "do",
+      "modelId": "gpt-4"
+    }
+  ],
+  "orchestration": {
+    "startAgent": "AgentA",
+    "edges": [{ "from": "AgentA", "to": "AgentB" }]
+  },
+  "mcpServers": [
+    {
+      "name": "filesystem",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "${TEST_FS_ROOT}"]
+    }
+  ]
+}
