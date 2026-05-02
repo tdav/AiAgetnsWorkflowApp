@@ -1,3 +1,4 @@
+using MagenticWorkflowApp.Exceptions;
 using MagenticWorkflowApp.Interfaces;
 using MagenticWorkflowApp.Models;
 using MagenticWorkflowApp.Services;
@@ -61,6 +62,20 @@ public class McpClientPoolTests
         await pool.GetToolsAsync(new[] { "A" });
         await pool.DisposeAsync();
         disposed.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetTools_FactoryThrows_WrapsInStartupException()
+    {
+        var pool = new McpClientPool(NullLogger<McpClientPool>.Instance,
+            (_, _) => throw new InvalidOperationException("boom"));
+
+        await pool.RegisterServersAsync(new[] { Cfg("A") });
+        var act = () => pool.GetToolsAsync(new[] { "A" });
+        var assertion = await act.Should().ThrowAsync<MagenticWorkflowApp.Exceptions.McpServerStartupException>();
+        assertion.WithMessage("*A*").WithMessage("*boom*");
+        assertion.Which.ServerName.Should().Be("A");
+        assertion.Which.InnerException.Should().BeOfType<InvalidOperationException>();
     }
 
     private static IMcpClient StubClient(IReadOnlyList<string> toolNames, Action? onDispose = null)

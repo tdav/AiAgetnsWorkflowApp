@@ -32,7 +32,10 @@ public sealed class McpClientPool : IMcpClientPool
     public Task RegisterServersAsync(IReadOnlyList<McpServerConfiguration> servers, CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
-        configs.Clear();
+        if (configs.Count > 0)
+        {
+            throw new InvalidOperationException("MCP servers already registered; pool is single-use per app lifetime.");
+        }
         foreach (var s in servers)
         {
             configs[s.Name] = s;
@@ -155,7 +158,7 @@ public sealed class McpClientPool : IMcpClientPool
         {
             var tools = await inner.ListToolsAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
             // McpClientTool : AIFunction : AITool — приводимы к AITool напрямую.
-            return tools.Cast<AITool>().ToArray();
+            return tools.OfType<AITool>().ToArray();
         }
 
         public ValueTask DisposeAsync() => inner.DisposeAsync();
