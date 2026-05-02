@@ -32,6 +32,10 @@
 		<!-- Явное обновление для устранения уязвимости GHSA-g94r-2vxg-569j -->
 		<PackageReference Include="OpenTelemetry.Api" Version="1.15.3" />
 	</ItemGroup>
+
+	<ItemGroup>
+		<InternalsVisibleTo Include="AiAgetnsWorkflow.Tests" />
+	</ItemGroup>
 	
 	<ItemGroup>
 		<None Update="appsettings.json">
