@@ -547,6 +547,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         foreach (var name in agentConfig.Plugins)
         {
             if (!_pluginRegistry.TryGet(name, out var plugin))
+                // Defensive: ValidatePluginReferences runs at start of ExecuteWorkflowFromJsonAsync; this guard handles direct invocation paths.
                 throw new WorkflowValidationException(
                     $"Agent '{agentConfig.Name}' references unknown plugin '{name}'");
             tools.AddRange(plugin!.AsAITools());
