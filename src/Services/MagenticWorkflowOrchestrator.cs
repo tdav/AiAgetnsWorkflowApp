@@ -117,30 +117,38 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         string? openAiApiKey,
         string? azureEndpoint)
     {
-        /*
-         * SEQUENTIAL WORKFLOW IMPLEMENTATION
-         * 
-         * var agents = CreateAgentsFromConfiguration(config, openAiApiKey);
-         * 
-         * var builder = new WorkflowBuilder()
-         *     .SetStartExecutor(agents[config.Orchestration.StartAgent]);
-         * 
-         * foreach (var edge in config.Orchestration.Edges)
-         * {
-         *     builder.AddEdge(agents[edge.From], agents[edge.To]);
-         * }
-         * 
-         * var workflow = builder.Build();
-         * 
-         * await foreach (var evt in workflow.RunStream(config.Task))
-         * {
-         *     HandleWorkflowEvent(evt);
-         * }
-         */
+        var agents = await CreateAgentsFromConfigurationAsync(
+            config, openAiApiKey, azureEndpoint, default).ConfigureAwait(false);
 
-        Console.WriteLine("📝 Sequential workflow execution would occur here.");
-        Console.WriteLine("   Install Microsoft.Agents.AI.Workflows package.\n");
-        await SimulateWorkflowExecutionAsync(config);
+        var startName = config.Orchestration?.StartAgent
+            ?? throw new WorkflowValidationException(
+                "Sequential workflow requires Orchestration.StartAgent");
+        var edges = config.Orchestration?.Edges ?? new List<EdgeConfiguration>();
+
+        // SDK 1.3.0: WorkflowBuilder ctor takes start ExecutorBinding;
+        // AIAgent → ExecutorBinding via implicit conversion.
+        var builder = new WorkflowBuilder(agents[startName]);
+        foreach (var edge in edges)
+        {
+            builder.AddEdge(agents[edge.From], agents[edge.To]);
+        }
+
+        // Wire up terminal node so workflow emits WorkflowOutputEvent.
+        var fromSet = edges.Select(e => e.From).ToHashSet(StringComparer.Ordinal);
+        var terminalName = edges.Select(e => e.To).FirstOrDefault(t => !fromSet.Contains(t))
+                           ?? startName;
+        builder.WithOutputFrom(agents[terminalName]);
+
+        var workflow = builder.Build();
+
+        await using var run = await InProcessExecution
+            .RunStreamingAsync(workflow, config.Task)
+            .ConfigureAwait(false);
+
+        await foreach (var evt in run.WatchStreamAsync().ConfigureAwait(false))
+        {
+            HandleWorkflowEvent(evt);
+        }
     }
 
     private async Task ExecuteConcurrentWorkflowAsync(
