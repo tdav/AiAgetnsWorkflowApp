@@ -17,7 +17,7 @@ public class McpClientPoolStdioTests
         StartupTimeoutSeconds = 30
     };
 
-    [Fact]
+    [Fact(Timeout = 60_000)]
     public async Task GetTools_StartsServerAndExposesEchoAndAdd()
     {
         await using var pool = new McpClientPool(NullLogger<McpClientPool>.Instance);
@@ -28,7 +28,7 @@ public class McpClientPoolStdioTests
         tools.Select(t => t.Name).Should().Contain(new[] { "Echo", "Add" });
     }
 
-    [Fact]
+    [Fact(Timeout = 60_000)]
     public async Task EchoTool_InvokeReturnsInput()
     {
         await using var pool = new McpClientPool(NullLogger<McpClientPool>.Instance);
@@ -37,6 +37,7 @@ public class McpClientPoolStdioTests
 
         var echo = (AIFunction)tools.First(t => t.Name == "Echo");
         var result = await echo.InvokeAsync(new() { ["message"] = "hi" });
-        result?.ToString().Should().Contain("hi");
+        result.Should().NotBeNull();
+        result!.ToString().Should().Contain("hi");
     }
 }
