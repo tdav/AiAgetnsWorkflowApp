@@ -1,237 +1,283 @@
-# Microsoft Agent Framework - Magentic Workflow
+# Microsoft Agent Framework — Magentic Workflow
 
-Консольное приложение для работы с Microsoft Agent Framework и различными типами Workflow Orchestration на C# .NET 8.0.
+Консольное приложение для оркестрации AI-агентов через **Microsoft Agent Framework** и **Semantic Kernel** на C# **.NET 10.0**.
 
-> 🎯 **Поддерживается 4 типа оркестрации:** Sequential, Concurrent, Conditional, Magentic
+> 🎯 **4 типа оркестрации:** Sequential, Concurrent, Conditional, Magentic
+> 🔌 **Расширения:** MCP (Model Context Protocol) серверы и C# плагины как инструменты агентов
 
-## 🌟 Что это?
+## 🌟 Что это
 
-Универсальная платформа для создания и выполнения AI-агентов workflows с динамической конфигурацией через JSON. Поддерживает все паттерны оркестрации из Microsoft Agent Framework.
+Универсальная платформа для создания и выполнения workflow с AI-агентами через **декларативную JSON-конфигурацию**. Агенты могут пользоваться инструментами:
 
-### 🚀 Быстрый старт (1 минута)
+- **MCP-серверы** (stdio/http) — внешние инструменты по протоколу Model Context Protocol
+- **C# плагины** (`IAgentPlugin`) — встроенные .NET-функции, доступные агентам через `AIFunctionFactory`
+- **Hosted tools** — встроенные инструменты OpenAI (например, `CodeInterpreter`)
 
-```bash
-# 1. Установка
-./setup.sh  # или setup.bat на Windows
+## 🎯 Возможности
 
-# 2. Запуск простого примера (работает без API ключей в DEMO режиме)
-dotnet run workflow-simple.json
-
-# 3. Настройте API ключ для реальной работы
-# Отредактируйте appsettings.json
-```
-
-## 🎯 Особенности
-
-- ✅ Загрузка логики workflow из JSON файлов
-- ✅ Универсальный метод для любой конфигурации workflow
-- ✅ Поддержка 4 типов оркестрации:
-  - **Magentic** - динамическая координация агентов менеджером
-  - **Sequential** - последовательное выполнение агентов (pipeline)
-  - **Concurrent** - параллельное выполнение (fan-out/fan-in)
-  - **Conditional** - условная маршрутизация на основе состояния
-- ✅ Визуализация workflow перед запуском (Mermaid диаграммы)
-- ✅ Вывод всех событий и сообщений в консоль
-- ✅ Конфигурация агентов через JSON
-- ✅ Гибкие настройки менеджера
+- ✅ 4 типа оркестрации:
+  - **Sequential** — pipeline A→B→C
+  - **Concurrent** — fan-out/fan-in
+  - **Conditional** — статический DAG (selection-функции на roadmap)
+  - **Magentic** — динамическая координация менеджером (Semantic Kernel)
+- ✅ MCP-инструменты через `IMcpClientPool` (stdio + http)
+- ✅ C# плагины через `IAgentPlugin` + `AgentPluginRegistry`
+- ✅ Mermaid-визуализация workflow в консоль
+- ✅ Graceful shutdown (Ctrl+C → `CancellationToken`)
+- ✅ Демо-режим без API-ключа (для проверки конфигурации)
+- ✅ DI через `Microsoft.Extensions.DependencyInjection`
+- ✅ User Secrets для безопасного хранения ключей
 
 ## 📋 Требования
 
-- .NET 8.0 SDK
-- Visual Studio 2022 или VS Code
-- OpenAI API ключ или Azure OpenAI endpoint
+- .NET 10.0 SDK
+- OpenAI API key или Azure OpenAI endpoint (для реального запуска; без ключа работает демо-режим)
+- (Опционально) Node.js + npx — если используются NPM-based MCP-серверы
 
-## 🚀 Установка
-
-### 1. Клонирование и настройка
+## 🚀 Быстрый старт
 
 ```bash
-# Создайте директорию проекта
-mkdir MagenticWorkflowApp
-cd MagenticWorkflowApp
+# Восстановление пакетов
+dotnet restore src/
 
-# Создайте структуру проекта
-mkdir Models Services
-```
+# Запуск demo (без API-ключа — пойдёт по DEMO branch)
+dotnet run --project src/ workflow-simple.json
 
-### 2. Установка NuGet пакетов
+# Установка API-ключа (User Secrets, без коммита)
+dotnet user-secrets set "OpenAI:ApiKey" "sk-..." --project src/
 
-```bash
-dotnet restore
-```
-
-**ВАЖНО**: Пакеты `Microsoft.Agents.*` могут быть в preview версии. Проверьте актуальные версии:
-
-```bash
-# Поиск доступных версий
-dotnet list package --outdated
-
-# Установка preview пакетов (когда доступны)
-dotnet add package Microsoft.Agents.AI --prerelease
-dotnet add package Microsoft.Agents.AI.Workflows --prerelease
-dotnet add package Microsoft.Agents.OpenAI --prerelease
-```
-
-### 3. Настройка API ключей
-
-Отредактируйте `appsettings.json`:
-
-```json
-{
-  "OpenAI": {
-    "ApiKey": "ВАШ_OPENAI_API_KEY"
-  }
-}
-```
-
-Или используйте переменные окружения:
-
-```bash
-# Windows
-set OpenAI__ApiKey=ваш_ключ
-
-# Linux/Mac
-export OpenAI__ApiKey=ваш_ключ
+# Запуск разных типов workflow
+dotnet run --project src/ workflow-sequential.json
+dotnet run --project src/ workflow-concurrent.json
+dotnet run --project src/ workflow-conditional.json
+dotnet run --project src/ workflow-config.json          # Magentic
+dotnet run --project src/ workflow-with-plugins.json    # с C# плагинами
+dotnet run --project src/ workflow-with-mcp.json        # с MCP-сервером
 ```
 
 ## 📁 Структура проекта
 
 ```
-MagenticWorkflowApp/
-├── Program.cs                          # Точка входа
-├── MagenticWorkflowApp.csproj          # Файл проекта
-├── appsettings.json                    # Конфигурация приложения
+AiAgetnsWorkflowApp/
+├── src/
+│   ├── AiAgetnsWorkflow.csproj          # Главный проект (.NET 10)
+│   ├── Program.cs                        # Точка входа + DI + Ctrl+C
+│   ├── appsettings.json                  # Логирование, OpenAI endpoint
+│   │
+│   ├── Interfaces/                       # IWorkflowOrchestrator, IMcpClientPool,
+│   │                                     # IAgentPlugin, IHostedToolFactory, ...
+│   ├── Models/                           # WorkflowConfiguration + AgentConfiguration,
+│   │                                     # McpServerConfiguration, ManagerConfiguration, ...
+│   ├── Services/
+│   │   ├── WorkflowJsonLoader.cs         # JSON → конфигурация + валидация
+│   │   ├── WorkflowVisualizer.cs         # Mermaid-диаграммы в консоль
+│   │   ├── MagenticWorkflowOrchestrator.cs  # Главный оркестратор (все 4 типа)
+│   │   ├── McpClientPool.cs              # Lazy-инициализация MCP-клиентов
+│   │   ├── HostedToolFactory.cs          # Создание hosted-инструментов
+│   │   ├── AgentPluginRegistry.cs        # Реестр C#-плагинов
+│   │   └── EnvVarSubstitution.cs         # ${VAR} в JSON-конфигах
+│   ├── Plugins/
+│   │   ├── WeatherPlugin.cs              # Пример: GetWeather(city)
+│   │   └── TimePlugin.cs                 # Пример: GetCurrentTime()
+│   ├── Exceptions/
+│   │   ├── WorkflowValidationException.cs
+│   │   ├── McpServerStartupException.cs
+│   │   └── McpServerCommunicationException.cs
+│   │
+│   ├── workflow-*.json                   # Примеры конфигураций workflow
+│   └── ...
 │
-├── Workflow Examples/
-│   ├── workflow-simple.json            # ⭐ Простой Magentic (начните здесь)
-│   ├── workflow-sequential.json        # 📝 Sequential pipeline
-│   ├── workflow-concurrent.json        # ⚡ Concurrent fan-out/fan-in
-│   ├── workflow-conditional.json       # 🔀 Conditional routing
-│   ├── workflow-config.json            # 🎯 Magentic ML analysis
-│   └── workflow-advanced.json          # 🚀 Advanced multi-agent
+├── tests/
+│   ├── AiAgetnsWorkflow.Tests/           # xUnit + NSubstitute + FluentAssertions
+│   │   ├── Mcp/                          # тесты McpClientPool, EnvVarSubstitution
+│   │   ├── Plugins/                      # тесты AgentPluginRegistry
+│   │   ├── Json/                         # тесты WorkflowJsonLoader
+│   │   ├── Integration/                  # OrchestratorWiringTests
+│   │   └── Fakes/                        # FakeChatClient, FakeMcpClient, ...
+│   └── FakeMcpServer/                    # Тестовый MCP-сервер для интеграционных тестов
 │
-├── Models/
-│   └── WorkflowConfiguration.cs        # Модели данных + orchestration
-│
-├── Services/
-│   ├── Interfaces.cs                   # Интерфейсы сервисов
-│   ├── WorkflowJsonLoader.cs           # Загрузчик JSON
-│   ├── WorkflowVisualizer.cs           # Визуализатор (Mermaid)
-│   └── MagenticWorkflowOrchestrator.cs # Оркестратор (все типы)
-│
-├── Documentation/
-│   ├── README.md                       # Основная документация
-│   ├── USAGE-GUIDE.md                  # Подробное руководство
-│   ├── WORKFLOW-SELECTION-GUIDE.md     # Выбор типа workflow
-│   ├── EXAMPLES-OVERVIEW.md            # Обзор примеров
-│   └── QUICK-REFERENCE.md              # Краткая справка
-│
-└── Scripts/
-    ├── setup.sh                        # Установка (Linux/Mac)
-    ├── setup.bat                       # Установка (Windows)
-    └── run-examples.sh                 # Запуск всех примеров
+└── docs/
+    └── superpowers/
+        ├── specs/                        # Спецификация дизайна
+        └── plans/                        # 20-task implementation plan
 ```
 
-## 🚀 Использование
-
-### Базовый запуск
+## 🔧 Команды разработки
 
 ```bash
-# Использование конфигурации по умолчанию (workflow-config.json)
-dotnet run
+# Сборка
+dotnet build src/
 
-# Использование конкретного файла конфигурации
-dotnet run workflow-simple.json
+# Все тесты
+dotnet test tests/AiAgetnsWorkflow.Tests/
 
-# Разные типы workflow
-dotnet run workflow-sequential.json     # Sequential pipeline
-dotnet run workflow-concurrent.json     # Concurrent fan-out/fan-in
-dotnet run workflow-conditional.json    # Conditional routing
+# Запуск (workflow-config.json по умолчанию)
+dotnet run --project src/
+
+# Запуск с конкретным workflow
+dotnet run --project src/ workflow-sequential.json
+
+# Управление API-ключами через User Secrets
+dotnet user-secrets set "OpenAI:ApiKey" "ваш_ключ" --project src/
+dotnet user-secrets list --project src/
+
+# Восстановление пакетов
+dotnet restore src/
+```
+
+## 🔌 MCP-серверы (Model Context Protocol)
+
+Подключение внешних инструментов через MCP-протокол. Транспорты: `stdio`, `http`.
+
+### Конфигурация
+
+```json
+{
+  "workflowType": "Sequential",
+  "task": "List files in the data directory.",
+  "agents": [
+    {
+      "name": "FsAgent",
+      "instructions": "Use the filesystem MCP tools to answer.",
+      "modelId": "gpt-4",
+      "mcpServers": ["filesystem"]
+    }
+  ],
+  "orchestration": { "startAgent": "FsAgent", "edges": [] },
+  "mcpServers": [
+    {
+      "name": "filesystem",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "${MCP_FS_ROOT}"]
+    }
+  ]
+}
+```
+
+### Поля `mcpServers[]`
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `name` | string | Уникальное имя (используется в `agents[].mcpServers`) |
+| `transport` | string | `"stdio"` или `"http"` |
+| `command` | string | (stdio) Исполняемый файл |
+| `args` | string[] | (stdio) Аргументы; поддерживается `${ENV_VAR}` |
+| `env` | object | (stdio) Переменные окружения процесса |
+| `url` | string | (http) URL endpoint |
+| `headers` | object | (http) HTTP-заголовки |
+| `startupTimeoutSeconds` | int | Таймаут старта (по умолчанию 30) |
+
+### Жизненный цикл
+
+- Регистрация серверов происходит однократно в начале workflow.
+- Клиенты создаются **лениво** при первом обращении (`GetToolsAsync`).
+- При завершении приложения `IMcpClientPool.DisposeAsync` корректно закрывает все клиенты.
+
+## 🧩 C# плагины
+
+Плагин = класс, реализующий `IAgentPlugin`. Возвращает набор `AITool` через `AIFunctionFactory.Create(method)`.
+
+### Пример
+
+```csharp
+using System.ComponentModel;
+using MagenticWorkflowApp.Interfaces;
+using Microsoft.Extensions.AI;
+
+namespace MagenticWorkflowApp.Plugins;
+
+public sealed class WeatherPlugin : IAgentPlugin
+{
+    public string Name => "WeatherPlugin";
+
+    public IEnumerable<AITool> AsAITools()
+    {
+        yield return AIFunctionFactory.Create(GetWeather);
+    }
+
+    [Description("Returns current weather for a city.")]
+    public static string GetWeather([Description("City name.")] string city)
+        => $"It is sunny and 22°C in {city} (stub).";
+}
+```
+
+### Регистрация в DI (Program.cs)
+
+```csharp
+services.AddSingleton<IAgentPlugin, Plugins.WeatherPlugin>();
+services.AddSingleton<IAgentPlugin, Plugins.TimePlugin>();
+services.AddSingleton<IAgentPluginRegistry, AgentPluginRegistry>();
+```
+
+DI автоматически собирает все `IAgentPlugin` в `IEnumerable<IAgentPlugin>` и передаёт в `AgentPluginRegistry`.
+
+### Использование в workflow JSON
+
+```json
+{
+  "agents": [
+    {
+      "name": "ClockAgent",
+      "instructions": "Use TimePlugin tools.",
+      "modelId": "gpt-4",
+      "plugins": ["TimePlugin"]
+    }
+  ]
+}
 ```
 
 ## 🔀 Типы Workflow Orchestration
 
-### 1. Sequential - Последовательный Pipeline
+### 1. Sequential
 
-**Описание:** Агенты выполняются последовательно, один за другим. Выход одного агента является входом для следующего.
+Pipeline A→B→C через `edges`. Выход одного агента → вход следующего.
 
-**Когда использовать:**
-- Задачи требуют строгого порядка выполнения
-- Каждый шаг зависит от результата предыдущего
-- Нужен структурированный поток данных
-
-**Пример конфигурации:**
 ```json
 {
   "workflowType": "Sequential",
   "orchestration": {
-    "startAgent": "DataCollectorAgent",
+    "startAgent": "DataCollector",
     "edges": [
-      { "from": "DataCollectorAgent", "to": "AnalystAgent" },
-      { "from": "AnalystAgent", "to": "ReportWriterAgent" }
+      { "from": "DataCollector", "to": "Analyst" },
+      { "from": "Analyst", "to": "ReportWriter" }
     ]
   }
 }
 ```
 
-**Визуализация:**
-```
-Start → Agent1 → Agent2 → Agent3 → End
-```
+### 2. Concurrent
 
-### 2. Concurrent - Параллельное выполнение
+Все участники выполняются параллельно с одним входом, результаты агрегируются.
 
-**Описание:** Все агенты выполняются одновременно с одинаковым входом. Результаты агрегируются.
-
-**Когда использовать:**
-- Задачи можно разделить на независимые подзадачи
-- Нужна высокая пропускная способность
-- Агенты имеют разные специализации для одной задачи
-
-**Пример конфигурации:**
 ```json
 {
   "workflowType": "Concurrent",
   "orchestration": {
     "concurrent": {
-      "participantAgents": ["Agent1", "Agent2", "Agent3"],
-      "aggregationStrategy": "Merge"
+      "participantAgents": ["Healthcare", "Finance", "Education"],
+      "aggregationStrategy": "Collect"
     }
   }
 }
 ```
 
-**Визуализация:**
-```
-        ┌─→ Agent1 ─┐
-Start ──┼─→ Agent2 ─┼─→ Aggregate → End
-        └─→ Agent3 ─┘
-```
+> **Замечание:** в текущей версии `aggregationStrategy` логируется, но фреймворк применяет агрегацию по умолчанию (`Collect`-эквивалент). Кастомные стратегии — в roadmap.
 
-**Стратегии агрегации:**
-- `Collect` - собрать все результаты в список
-- `Merge` - объединить результаты в единый документ
-- `Vote` - выбрать лучший результат голосованием
+### 3. Conditional
 
-### 3. Conditional - Условная маршрутизация
+Статический DAG через `edges`. Selection-функции (`conditionalEdges` с `selectionFunction`) принимаются в JSON, но **не выполняются** в текущей версии — выводится warning, выполняется только статическая часть.
 
-**Описание:** Маршрутизация между агентами определяется условиями и состоянием выполнения.
-
-**Когда использовать:**
-- Путь выполнения зависит от промежуточных результатов
-- Нужна динамическая логика принятия решений
-- Разные сценарии требуют разных агентов
-
-**Пример конфигурации:**
 ```json
 {
   "workflowType": "Conditional",
   "orchestration": {
-    "startAgent": "ClassifierAgent",
+    "startAgent": "Classifier",
+    "edges": [{ "from": "Classifier", "to": "Responder" }],
     "conditionalEdges": [
       {
-        "from": "ClassifierAgent",
-        "toOptions": ["TechnicalAgent", "BillingAgent", "GeneralAgent"],
+        "from": "Classifier",
+        "toOptions": ["Tech", "Billing", "General"],
         "selectionFunction": "classify_issue_type"
       }
     ]
@@ -239,76 +285,24 @@ Start ──┼─→ Agent2 ─┼─→ Aggregate → End
 }
 ```
 
-**Визуализация:**
-```
-Start → Classifier → Decision ┬─→ TechnicalAgent → End
-                              ├─→ BillingAgent → End
-                              └─→ GeneralAgent → End
-```
+### 4. Magentic
 
-### 4. Magentic - Динамическая координация
+Менеджер на базе **Semantic Kernel** (`StandardMagenticManager`) динамически выбирает агентов из списка участников.
 
-**Описание:** Менеджер динамически выбирает и координирует агентов на основе текущего контекста.
-
-**Когда использовать:**
-- Сложные задачи с неизвестным решением
-- Требуется адаптивное планирование
-- Нужно итеративное улучшение результатов
-
-**Пример конфигурации:**
 ```json
 {
   "workflowType": "Magentic",
   "manager": {
+    "modelId": "gpt-4",
     "maxRoundCount": 10,
-    "maxStallCount": 3
+    "maxStallCount": 3,
+    "maxResetCount": 2
   },
   "agents": [...]
 }
 ```
 
-**Визуализация:**
-```
-                    ┌─→ Agent1 ─┐
-Start → Manager ────┼─→ Agent2 ─┼──→ Manager → End
-                    └─→ Agent3 ─┘
-         ↑______________|
-```
-
-### Создание своей конфигурации
-
-Создайте файл `my-workflow.json`:
-
-```json
-{
-  "workflowType": "Magentic",
-  "task": "Ваша задача здесь...",
-  "manager": {
-    "modelId": "gpt-4",
-    "maxRoundCount": 10,
-    "maxStallCount": 3,
-    "maxResetCount": 2,
-    "enablePlanReview": false
-  },
-  "agents": [
-    {
-      "name": "Agent1",
-      "description": "Описание агента",
-      "instructions": "Инструкции для агента",
-      "modelId": "gpt-4",
-      "tools": [],
-      "metadata": {}
-    }
-  ],
-  "settings": {}
-}
-```
-
-Запустите:
-
-```bash
-dotnet run my-workflow.json
-```
+> **Замечание:** Magentic в текущей итерации использует SemanticKernel `ChatCompletionAgent` без передачи `AITool` в SK Kernel. Tool bridging (M.E.AI → KernelPlugin) — в roadmap. При наличии инструментов в конфиге пишется warning.
 
 ## 📊 Формат JSON конфигурации
 
@@ -316,205 +310,92 @@ dotnet run my-workflow.json
 
 | Поле | Тип | Описание |
 |------|-----|----------|
-| `workflowType` | string | Тип workflow: "Magentic", "Sequential", "Concurrent", "Conditional" |
-| `task` | string | Описание задачи для выполнения |
-| `manager` | object | Конфигурация менеджера (для Magentic) |
-| `orchestration` | object | Конфигурация оркестрации (для Sequential/Concurrent/Conditional) |
-| `agents` | array | Массив агентов |
+| `workflowType` | string | `"Sequential"`, `"Concurrent"`, `"Conditional"`, `"Magentic"` |
+| `task` | string | Описание задачи |
+| `manager` | object | Конфигурация менеджера (Magentic) |
+| `orchestration` | object | Конфигурация оркестрации (Sequential/Concurrent/Conditional) |
+| `agents` | array | Список агентов |
+| `mcpServers` | array | Описание MCP-серверов |
 | `settings` | object | Дополнительные настройки |
 
-### Конфигурация Orchestration
-
-#### Для Sequential:
-```json
-{
-  "orchestration": {
-    "startAgent": "FirstAgent",
-    "edges": [
-      { "from": "FirstAgent", "to": "SecondAgent", "label": "Optional Label" }
-    ]
-  }
-}
-```
-
-#### Для Concurrent:
-```json
-{
-  "orchestration": {
-    "concurrent": {
-      "participantAgents": ["Agent1", "Agent2", "Agent3"],
-      "aggregationStrategy": "Merge"  // Collect, Merge, Vote
-    }
-  }
-}
-```
-
-#### Для Conditional:
-```json
-{
-  "orchestration": {
-    "startAgent": "InitialAgent",
-    "edges": [
-      { "from": "Agent1", "to": "Agent2" }  // Static edges
-    ],
-    "conditionalEdges": [
-      {
-        "from": "DecisionAgent",
-        "toOptions": ["OptionA", "OptionB", "OptionC"],
-        "selectionFunction": "decision_logic_name",
-        "parameters": {}
-      }
-    ]
-  }
-}
-```
-
-### Конфигурация Manager
+### Конфигурация агента
 
 | Поле | Тип | Описание |
 |------|-----|----------|
-| `modelId` | string | ID модели OpenAI (например, "gpt-4") |
-| `maxRoundCount` | int | Максимальное количество раундов |
-| `maxStallCount` | int | Максимальное количество раундов без прогресса |
-| `maxResetCount` | int | Максимальное количество сбросов плана |
-| `enablePlanReview` | bool | Включить ревью плана человеком |
-
-### Конфигурация Agent
-
-| Поле | Тип | Описание |
-|------|-----|----------|
-| `name` | string | Уникальное имя агента |
-| `description` | string | Описание специализации |
-| `instructions` | string | Инструкции для агента |
-| `modelId` | string | ID модели для агента |
-| `tools` | array | Список инструментов (например, ["CodeInterpreter"]) |
-| `metadata` | object | Дополнительные метаданные |
-
-## 🎨 Визуализация Workflow
-
-Приложение автоматически создает визуализацию workflow перед запуском:
-
-1. **Консольная визуализация** - структурированный вывод конфигурации
-2. **Mermaid диаграмма** - граф взаимодействия агентов
-
-Пример диаграммы:
-
-```mermaid
-graph TD
-    Start([Task Start]) --> Manager[Magentic Manager]
-    Manager -->|Delegates| Agent1[Research Agent]
-    Agent1 -->|Returns Result| Manager
-    Manager -->|Delegates| Agent2[Coder Agent]
-    Agent2 -->|Returns Result| Manager
-    Manager --> End([Final Result])
-```
-
-## 📝 События и логирование
-
-Приложение выводит следующие события:
-
-- `[ORCHESTRATOR]` - события менеджера (планирование, координация)
-- `[AGENT:name]` - события агентов (выполнение задач)
-- `[STREAM:name]` - потоковый вывод токенов
-- `[FINAL RESULT]` - итоговый результат
-
-## 🔧 Расширенные возможности
-
-### Human-in-the-Loop Plan Review
-
-Включите в конфигурации:
-
-```json
-{
-  "manager": {
-    "enablePlanReview": true
-  }
-}
-```
-
-### Добавление инструментов агентам
-
-```json
-{
-  "agents": [
-    {
-      "name": "CoderAgent",
-      "tools": ["CodeInterpreter"],
-      ...
-    }
-  ]
-}
-```
-
-## 🐛 Отладка
-
-Включите детальное логирование в `appsettings.json`:
-
-```json
-{
-  "Logging": {
-    "LogLevel": {
-      "Default": "Debug"
-    }
-  }
-}
-```
-
-## 📚 Примеры задач
-
-### Пример 1: Sequential - Анализ исследований
-```bash
-dotnet run workflow-sequential.json
-```
-**Задача:** Создание исследовательского отчета о квантовых вычислениях в криптографии.
-**Flow:** Сбор данных → Анализ → Оценка безопасности → Написание отчета
-
-### Пример 2: Concurrent - Анализ индустрий
-```bash
-dotnet run workflow-concurrent.json
-```
-**Задача:** Параллельный анализ влияния AI на разные индустрии.
-**Flow:** Одновременный анализ Healthcare, Finance, Education, Transportation → Агрегация
-
-### Пример 3: Conditional - Обработка тикетов
-```bash
-dotnet run workflow-conditional.json
-```
-**Задача:** Умная маршрутизация обращений поддержки.
-**Flow:** Анализ → Классификация → Динамическая маршрутизация (Technical/Billing/General) → Ответ
-
-### Пример 4: Magentic - Энергоэффективность ML
-```bash
-dotnet run workflow-config.json
-```
-**Задача:** Сравнение энергопотребления разных ML моделей.
-**Flow:** Менеджер динамически координирует Researcher и Coder агентов
-
-## ⚠️ Важные замечания
-
-1. **API ключи**: Не коммитьте `appsettings.json` с реальными ключами в Git
-2. **Costs**: OpenAI API платный - следите за использованием
-3. **Preview пакеты**: Microsoft.Agents.* могут быть нестабильными
-4. **Rate limits**: Соблюдайте лимиты API OpenAI
+| `name` | string | Уникальное имя |
+| `description` | string | Описание |
+| `instructions` | string | Системные инструкции |
+| `modelId` | string | Например, `"gpt-4"` |
+| `tools` | string[] | Hosted tools (например, `["CodeInterpreter"]`) |
+| `mcpServers` | string[] | Имена MCP-серверов из корневого `mcpServers[]` |
+| `plugins` | string[] | Имена C#-плагинов из `IAgentPluginRegistry` |
+| `metadata` | object | Произвольные метаданные |
 
 ## 🔐 Безопасность
 
 ```bash
-# Используйте .NET User Secrets для хранения ключей
-dotnet user-secrets init
-dotnet user-secrets set "OpenAI:ApiKey" "ваш_ключ"
+# User Secrets (не коммитятся в Git)
+dotnet user-secrets set "OpenAI:ApiKey" "sk-..." --project src/
+
+# Или переменные окружения
+# Windows: set OpenAI__ApiKey=ваш_ключ
+# Linux/Mac: export OpenAI__ApiKey=ваш_ключ
 ```
 
-## 🤝 Вклад
+`UserSecretsId` уже зарегистрирован в `src/AiAgetnsWorkflow.csproj`.
 
-Вопросы и предложения приветствуются!
+## 🐛 Демо-режим
+
+Если ни `OpenAI:ApiKey`, ни `AzureOpenAI:Endpoint` не заданы — приложение запускается в **DEMO branch**: симулирует выполнение, печатает события агентов, не делает реальных вызовов к LLM. Удобно для проверки JSON-конфигурации.
+
+## 🧪 Тесты
+
+```bash
+dotnet test tests/AiAgetnsWorkflow.Tests/
+```
+
+Покрытие:
+- `WorkflowJsonLoader` — валидация JSON, ссылок на агентов/плагины/MCP-серверы
+- `McpClientPool` — lazy-инициализация, dispose, idempotency
+- `AgentPluginRegistry` — duplicate detection, lookup
+- `HostedToolFactory` — создание `CodeInterpreter`
+- `EnvVarSubstitution` — подстановка `${VAR}` с указанием отсутствующих
+- `Integration/OrchestratorWiringTests` — полный путь от JSON до DEMO-выполнения
+
+## 🔧 Расширенные возможности
+
+### Подстановка переменных окружения в JSON
+
+В строковых значениях `args`, `command`, `url` и т.п. поддерживается синтаксис `${VAR_NAME}`:
+
+```json
+"args": ["-y", "@modelcontextprotocol/server-filesystem", "${MCP_FS_ROOT}"]
+```
+
+Если `${MCP_FS_ROOT}` не задана — `WorkflowValidationException` с указанием отсутствующих переменных.
+
+### Graceful shutdown
+
+`Ctrl+C` → `CancellationToken` → exit code `130`. Внутри workflow `OperationCanceledException` пробрасывается до `Program.Main`.
+
+## ⚠️ Известные ограничения текущей версии
+
+| Область | Состояние |
+|--------|-----------|
+| Selection-функции в Conditional | ❌ Не реализовано (только статические `edges`) |
+| Tool bridging в Magentic | ❌ Не реализовано (`AITool` → `KernelPlugin`) |
+| Кастомные `aggregationStrategy` в Concurrent | ❌ Не реализовано (используется default) |
+| Azure OpenAI в Magentic | ❌ Только OpenAI |
+| Многократный `RegisterServersAsync` | ❌ Pool single-use per app lifetime |
+
+## 🔗 Полезные ссылки
+
+- [Microsoft Agent Framework](https://learn.microsoft.com/en-us/agent-framework/overview/?pivots=programming-language-csharp)
+- [Magentic Orchestration Guide](https://learn.microsoft.com/en-us/agent-framework/user-guide/workflows/orchestrations/magentic)
+- [Semantic Kernel Agents](https://learn.microsoft.com/en-us/semantic-kernel/frameworks/agent/)
+- [Model Context Protocol](https://modelcontextprotocol.io/)
+- [OpenAI API](https://platform.openai.com/docs)
 
 ## 📄 Лицензия
 
 MIT License
-
-## 🔗 Полезные ссылки
-
-- [Microsoft Agent Framework Documentation](https://learn.microsoft.com/en-us/agent-framework/)
-- [Magentic Orchestration Guide](https://learn.microsoft.com/en-us/agent-framework/user-guide/workflows/orchestrations/magentic)
-- [OpenAI API Documentation](https://platform.openai.com/docs)
