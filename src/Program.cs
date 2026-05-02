@@ -62,8 +62,7 @@ internal static class Program
         services.AddSingleton<IHostedToolFactory, HostedToolFactory>();
         services.AddSingleton<IAgentPluginRegistry, AgentPluginRegistry>();
 
-        // TODO: uncomment after Task 19 adds plugin implementations
-        // services.AddSingleton<IAgentPlugin, Plugins.WeatherPlugin>();
-        // services.AddSingleton<IAgentPlugin, Plugins.TimePlugin>();
+        services.AddSingleton<IAgentPlugin, Plugins.WeatherPlugin>();
+        services.AddSingleton<IAgentPlugin, Plugins.TimePlugin>();
     }
 }
