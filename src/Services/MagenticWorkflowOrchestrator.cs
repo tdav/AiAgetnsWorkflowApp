@@ -10,7 +10,13 @@ using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.Agents;
+using Microsoft.SemanticKernel.Agents.Magentic;
+using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
+using Microsoft.SemanticKernel.ChatCompletion;
 using OpenAI;
 
 namespace MagenticWorkflowApp.Services;
@@ -295,81 +301,80 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         string? openAiApiKey,
         string? azureEndpoint)
     {
-        /*
-         * MAGENTIC WORKFLOW IMPLEMENTATION
-         * 
-         * // 1. Create specialized agents from configuration
-         * var agents = new Dictionary<string, ChatAgent>();
-         * 
-         * foreach (var agentConfig in config.Agents)
-         * {
-         *     var chatClient = new OpenAIChatClient(
-         *         aiModelId: agentConfig.ModelId,
-         *         apiKey: openAiApiKey
-         *     );
-         *     
-         *     var tools = new List<ITool>();
-         *     foreach (var toolName in agentConfig.Tools)
-         *     {
-         *         if (toolName == "CodeInterpreter")
-         *         {
-         *             tools.Add(new HostedCodeInterpreterTool());
-         *         }
-         *     }
-         *     
-         *     var agent = new ChatAgent(
-         *         name: agentConfig.Name,
-         *         description: agentConfig.Description,
-         *         instructions: agentConfig.Instructions,
-         *         chatClient: chatClient,
-         *         tools: tools.ToArray()
-         *     );
-         *     
-         *     agents.Add(agentConfig.Name, agent);
-         * }
-         * 
-         * // 2. Setup event callbacks
-         * async Task OnEvent(MagenticCallbackEvent evt)
-         * {
-         *     HandleWorkflowEvent(evt);
-         * }
-         * 
-         * // 3. Build workflow using MagenticBuilder
-         * var managerClient = new OpenAIChatClient(
-         *     aiModelId: config.Manager.ModelId,
-         *     apiKey: openAiApiKey
-         * );
-         * 
-         * var builder = new MagenticBuilder()
-         *     .Participants(agents)
-         *     .OnEvent(OnEvent, MagenticCallbackMode.STREAMING)
-         *     .WithStandardManager(
-         *         chatClient: managerClient,
-         *         maxRoundCount: config.Manager.MaxRoundCount,
-         *         maxStallCount: config.Manager.MaxStallCount,
-         *         maxResetCount: config.Manager.MaxResetCount
-         *     );
-         * 
-         * if (config.Manager.EnablePlanReview)
-         * {
-         *     builder.WithPlanReview();
-         * }
-         * 
-         * var workflow = builder.Build();
-         * 
-         * // 4. Execute workflow
-         * await foreach (var evt in workflow.RunStream(config.Task))
-         * {
-         *     if (evt is WorkflowCompletedEvent completedEvt)
-         *     {
-         *         Console.WriteLine("\n✅ Workflow completed successfully!");
-         *     }
-         * }
-         */
+        if (string.IsNullOrWhiteSpace(openAiApiKey))
+            throw new WorkflowValidationException(
+                "Magentic workflow requires OpenAI API key (Azure not yet supported for Magentic).");
 
-        Console.WriteLine("📝 Magentic workflow execution would occur here.");
-        Console.WriteLine("   Install Microsoft.Agents.AI.Workflows package.\n");
-        await SimulateWorkflowExecutionAsync(config);
+        var skAgents = new List<ChatCompletionAgent>();
+        foreach (var agentConfig in config.Agents)
+        {
+            var kernel = Kernel.CreateBuilder()
+                .AddOpenAIChatCompletion(agentConfig.ModelId, openAiApiKey)
+                .Build();
+
+            var toolCount = agentConfig.Tools.Count + agentConfig.McpServers.Count + agentConfig.Plugins.Count;
+            if (toolCount > 0)
+            {
+                _logger.LogWarning(
+                    "Agent '{Agent}' has {Count} tool(s) configured, but tool bridging to SemanticKernel is deferred for Magentic workflows",
+                    agentConfig.Name, toolCount);
+            }
+
+            skAgents.Add(new ChatCompletionAgent
+            {
+                Name = agentConfig.Name,
+                Description = agentConfig.Description,
+                Instructions = agentConfig.Instructions,
+                Kernel = kernel,
+            });
+        }
+
+        var managerKernel = Kernel.CreateBuilder()
+            .AddOpenAIChatCompletion(config.Manager.ModelId, openAiApiKey)
+            .Build();
+        var managerService = managerKernel.GetRequiredService<IChatCompletionService>();
+
+        var manager = new StandardMagenticManager(managerService, new PromptExecutionSettings())
+        {
+            MaximumInvocationCount = config.Manager.MaxRoundCount,
+            MaximumStallCount = config.Manager.MaxStallCount,
+            MaximumResetCount = config.Manager.MaxResetCount,
+        };
+
+        var orchestration = new MagenticOrchestration(manager, skAgents.ToArray())
+        {
+            ResponseCallback = response =>
+            {
+                LogEvent(
+                    $"AGENT:{response.AuthorName ?? "?"}",
+                    response.Content ?? "(empty)",
+                    ConsoleColor.Yellow);
+                return ValueTask.CompletedTask;
+            },
+            LoggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(
+                b => b.AddConsole()),
+        };
+
+        var runtime = new InProcessRuntime();
+        await runtime.StartAsync(default).ConfigureAwait(false);
+
+        try
+        {
+            using var result = await orchestration
+                .InvokeAsync(config.Task, runtime, default)
+                .ConfigureAwait(false);
+
+            var output = await result
+                .GetValueAsync(TimeSpan.FromMinutes(5), default)
+                .ConfigureAwait(false);
+
+            ShowFinalResult(output ?? "(no output)");
+        }
+        finally
+        {
+            await runtime.StopAsync(default).ConfigureAwait(false);
+            await runtime.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     private async Task SimulateWorkflowExecutionAsync(WorkflowConfiguration config)
