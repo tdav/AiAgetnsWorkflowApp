@@ -26,6 +26,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\FakeMcpServer\FakeMcpServer.csproj">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <OutputItemType>Content</OutputItemType>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </ProjectReference>
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="TestData\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

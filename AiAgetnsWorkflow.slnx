@@ -4,5 +4,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/AiAgetnsWorkflow.Tests/AiAgetnsWorkflow.Tests.csproj" />
+    <Project Path="tests/FakeMcpServer/FakeMcpServer.csproj" />
   </Folder>
 </Solution>
