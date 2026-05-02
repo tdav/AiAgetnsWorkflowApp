@@ -180,27 +180,41 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         string? openAiApiKey,
         string? azureEndpoint)
     {
-        /*
-         * CONCURRENT WORKFLOW IMPLEMENTATION
-         * 
-         * var agents = CreateAgentsFromConfiguration(config, openAiApiKey);
-         * var participantAgents = config.Orchestration.Concurrent.ParticipantAgents
-         *     .Select(name => agents[name])
-         *     .ToArray();
-         * 
-         * var workflow = new ConcurrentBuilder()
-         *     .Participants(participantAgents)
-         *     .Build();
-         * 
-         * await foreach (var evt in workflow.RunStream(config.Task))
-         * {
-         *     HandleWorkflowEvent(evt);
-         * }
-         */
+        var participantNames = config.Orchestration?.Concurrent?.ParticipantAgents;
+        if (participantNames is null || participantNames.Count == 0)
+            throw new WorkflowValidationException(
+                "Concurrent workflow requires Orchestration.Concurrent.ParticipantAgents (non-empty list)");
 
-        Console.WriteLine("📝 Concurrent workflow execution would occur here.");
-        Console.WriteLine("   Install Microsoft.Agents.AI.Workflows package.\n");
-        await SimulateWorkflowExecutionAsync(config);
+        var agents = await CreateAgentsFromConfigurationAsync(
+            config, openAiApiKey, azureEndpoint, default).ConfigureAwait(false);
+
+        // Pre-validate participant references: every name must map to a known agent.
+        foreach (var name in participantNames)
+        {
+            if (!agents.ContainsKey(name))
+                throw new WorkflowValidationException(
+                    $"Concurrent participant references unknown agent '{name}'");
+        }
+
+        var participants = participantNames.Select(n => agents[n]).ToArray();
+
+        var strategy = config.Orchestration?.Concurrent?.AggregationStrategy ?? "Collect";
+        _logger.LogInformation(
+            "Concurrent workflow: {Count} participants, aggregation strategy '{Strategy}' (default aggregator)",
+            participants.Length, strategy);
+
+        // SDK 1.3.0: AgentWorkflowBuilder.BuildConcurrent fans out the same input to each
+        // participant in parallel and aggregates per-agent last messages by default.
+        var workflow = AgentWorkflowBuilder.BuildConcurrent(participants);
+
+        await using var run = await InProcessExecution
+            .RunStreamingAsync(workflow, config.Task)
+            .ConfigureAwait(false);
+
+        await foreach (var evt in run.WatchStreamAsync().ConfigureAwait(false))
+        {
+            HandleWorkflowEvent(evt);
+        }
     }
 
     private async Task ExecuteConditionalWorkflowAsync(
