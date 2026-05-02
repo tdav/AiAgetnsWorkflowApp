@@ -11,4 +11,5 @@ public class WorkflowConfiguration
     public List<AgentConfiguration> Agents { get; set; } = new();
     public OrchestrationConfiguration? Orchestration { get; set; }
     public Dictionary<string, string> Settings { get; set; } = new();
+    public List<McpServerConfiguration> McpServers { get; set; } = new();
 }

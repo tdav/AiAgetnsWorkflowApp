@@ -13,4 +13,6 @@ public class AgentConfiguration
     public string ModelId { get; set; } = "gpt-4";
     public List<string> Tools { get; set; } = new();
     public Dictionary<string, object> Metadata { get; set; } = new();
+    public List<string> McpServers { get; set; } = new();
+    public List<string> Plugins { get; set; } = new();
 }
