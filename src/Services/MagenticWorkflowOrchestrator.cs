@@ -125,6 +125,17 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
                 "Sequential workflow requires Orchestration.StartAgent");
         var edges = config.Orchestration?.Edges ?? new List<EdgeConfiguration>();
 
+        // Pre-validate edge references: every From/To must map to a known agent.
+        foreach (var edge in edges)
+        {
+            if (!agents.ContainsKey(edge.From))
+                throw new WorkflowValidationException(
+                    $"Edge references unknown agent '{edge.From}'");
+            if (!agents.ContainsKey(edge.To))
+                throw new WorkflowValidationException(
+                    $"Edge references unknown agent '{edge.To}'");
+        }
+
         // SDK 1.3.0: WorkflowBuilder ctor takes start ExecutorBinding;
         // AIAgent → ExecutorBinding via implicit conversion.
         var builder = new WorkflowBuilder(agents[startName]);
@@ -133,10 +144,23 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
             builder.AddEdge(agents[edge.From], agents[edge.To]);
         }
 
-        // Wire up terminal node so workflow emits WorkflowOutputEvent.
+        // Robust terminal detection: collect all leaves (nodes with no outgoing edge).
+        // Sequential workflow expects a single chain — exactly one leaf.
         var fromSet = edges.Select(e => e.From).ToHashSet(StringComparer.Ordinal);
-        var terminalName = edges.Select(e => e.To).FirstOrDefault(t => !fromSet.Contains(t))
-                           ?? startName;
+        var leaves = config.Agents
+            .Select(a => a.Name)
+            .Where(n => !fromSet.Contains(n))
+            .ToList();
+
+        string terminalName;
+        if (leaves.Count == 1)
+            terminalName = leaves[0];
+        else if (leaves.Count == 0)
+            terminalName = startName;   // single-node graph (no edges)
+        else
+            throw new WorkflowValidationException(
+                $"Sequential workflow requires single terminal agent; found {leaves.Count}: {string.Join(", ", leaves)}");
+
         builder.WithOutputFrom(agents[terminalName]);
 
         var workflow = builder.Build();
