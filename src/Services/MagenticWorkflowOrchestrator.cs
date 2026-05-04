@@ -12,8 +12,10 @@ using Microsoft.SemanticKernel.Agents.Magentic;
 using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
+using Microsoft.Extensions.DependencyInjection;
 using OpenAI;
 using System.ClientModel.Primitives;
+using System.Linq;
 using System.Text.Json;
 
 namespace MagenticWorkflowApp.Services;
@@ -759,20 +761,51 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         return openAi.GetChatClient(modelId).AsIChatClient();
     }
 
-    private static Kernel BuildKernel(string modelId, string? openAiApiKey, string? ollamaEndpoint, bool enableThinking = false)
+    private static Kernel BuildKernel(
+        string modelId,
+        string? openAiApiKey,
+        string? ollamaEndpoint,
+        bool enableThinking = false,
+        string? agentName = null,
+        IAgentActivityLogger? activity = null)
     {
+        var builder = Kernel.CreateBuilder();
         if (!string.IsNullOrWhiteSpace(ollamaEndpoint))
         {
-            var options = new OpenAI.OpenAIClientOptions { Endpoint = new Uri(ollamaEndpoint + "/v1"), NetworkTimeout = TimeSpan.FromMinutes(5) };
+            var options = new OpenAI.OpenAIClientOptions
+            {
+                Endpoint = new Uri(ollamaEndpoint + "/v1"),
+                NetworkTimeout = TimeSpan.FromMinutes(5),
+            };
             options.AddPolicy(new OllamaThinkingPolicy(enableThinking), PipelinePosition.PerCall);
             var ollamaClient = new OpenAIClient(new System.ClientModel.ApiKeyCredential("ollama"), options);
-            return Kernel.CreateBuilder()
-                .AddOpenAIChatCompletion(modelId, ollamaClient)
-                .Build();
+            builder.AddOpenAIChatCompletion(modelId, ollamaClient);
         }
-        return Kernel.CreateBuilder()
-            .AddOpenAIChatCompletion(modelId, openAiApiKey!)
-            .Build();
+        else
+        {
+            builder.AddOpenAIChatCompletion(modelId, openAiApiKey!);
+        }
+
+        if (agentName is not null && activity is not null)
+        {
+            var descriptor = builder.Services.LastOrDefault(d =>
+                d.ServiceType == typeof(IChatCompletionService));
+            if (descriptor is not null)
+            {
+                builder.Services.Remove(descriptor);
+                builder.Services.AddSingleton<IChatCompletionService>(sp =>
+                {
+                    IChatCompletionService inner = descriptor.ImplementationFactory is not null
+                        ? (IChatCompletionService)descriptor.ImplementationFactory(sp)
+                        : descriptor.ImplementationInstance is not null
+                            ? (IChatCompletionService)descriptor.ImplementationInstance
+                            : (IChatCompletionService)ActivatorUtilities.CreateInstance(sp, descriptor.ImplementationType!);
+                    return new LoggingChatCompletionService(inner, agentName, activity);
+                });
+            }
+        }
+
+        return builder.Build();
     }
 
     private void ValidatePluginReferences(WorkflowConfiguration config)
