@@ -33,6 +33,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
     private readonly IMcpClientPool mcpPool;
     private readonly IHostedToolFactory hostedFactory;
     private readonly IAgentPluginRegistry pluginRegistry;
+    private readonly IAgentActivityLogger activity;
 
     public MagenticWorkflowOrchestrator(
         ILogger<MagenticWorkflowOrchestrator> logger,
@@ -42,7 +43,8 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         IConfiguration configuration,
         IMcpClientPool mcpPool,
         IHostedToolFactory hostedFactory,
-        IAgentPluginRegistry pluginRegistry)
+        IAgentPluginRegistry pluginRegistry,
+        IAgentActivityLogger activity)
     {
         this.logger = logger;
         this.loggerFactory = loggerFactory;
@@ -52,6 +54,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         this.mcpPool = mcpPool;
         this.hostedFactory = hostedFactory;
         this.pluginRegistry = pluginRegistry;
+        this.activity = activity;
     }
 
     public async Task ExecuteWorkflowFromJsonAsync(string jsonFilePath, CancellationToken cancellationToken = default)
@@ -137,6 +140,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         string? azureEndpoint,
         string? ollamaEndpoint = null)
     {
+        activity.SetWorkflowMode(WorkflowDisplayMode.Sequential);
         var agents = await CreateAgentsFromConfigurationAsync(
             config, openAiApiKey, azureEndpoint, ollamaEndpoint, default).ConfigureAwait(false);
 
@@ -207,6 +211,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         string? azureEndpoint,
         string? ollamaEndpoint = null)
     {
+        activity.SetWorkflowMode(WorkflowDisplayMode.Concurrent);
         var participantNames = config.Orchestration?.Concurrent?.ParticipantAgents;
         if (participantNames is null || participantNames.Count == 0)
             throw new WorkflowValidationException(
@@ -256,6 +261,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         string? azureEndpoint,
         string? ollamaEndpoint = null)
     {
+        activity.SetWorkflowMode(WorkflowDisplayMode.Sequential);
         var agents = await CreateAgentsFromConfigurationAsync(
             config, openAiApiKey, azureEndpoint, ollamaEndpoint, default).ConfigureAwait(false);
 
@@ -336,6 +342,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         string? azureEndpoint,
         string? ollamaEndpoint = null)
     {
+        activity.SetWorkflowMode(WorkflowDisplayMode.Sequential);
         if (string.IsNullOrWhiteSpace(openAiApiKey) && string.IsNullOrWhiteSpace(ollamaEndpoint))
             throw new WorkflowValidationException(
                 "Magentic workflow requires OpenAI API key or Ollama endpoint.");
@@ -646,41 +653,46 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         switch (evt)
         {
             case AgentResponseUpdateEvent a:
-                LogEvent(
-                    $"AGENT:{a.Update?.AuthorName ?? a.ExecutorId ?? "?"}",
-                    a.Update?.Text ?? string.Empty,
-                    ConsoleColor.Yellow);
-
-                LogEvent($"AGENT:{a.Update?.AuthorName ?? a.ExecutorId ?? "?"}", $"Data: {a.Data}", ConsoleColor.Yellow);
+                activity.OnChunk(
+                    a.Update?.AuthorName ?? a.ExecutorId ?? "?",
+                    a.Update?.Text ?? string.Empty);
                 return null;
 
             case AgentResponseEvent r:
-                LogEvent(
-                    $"AGENT:{r.ExecutorId ?? "?"}",
-                    r.Response?.Text ?? "(empty response)",
-                    ConsoleColor.Green);
+                var agentName = r.ExecutorId ?? "?";
+                activity.OnTurnCompleted(agentName, r.Response?.Text);
+                if (r.Response?.Messages is { } msgs)
+                {
+                    foreach (var m in msgs)
+                    {
+                        foreach (var c in m.Contents.OfType<Microsoft.Extensions.AI.FunctionCallContent>())
+                        {
+                            activity.OnToolCall(
+                                agentName,
+                                c.Name,
+                                c.Arguments is null ? null : System.Text.Json.JsonSerializer.Serialize(c.Arguments));
+                        }
+                    }
+                }
                 return null;
 
             case ExecutorFailedEvent ef:
                 var execEx = ef.Data as Exception
                     ?? new InvalidOperationException($"Executor '{ef.ExecutorId}' failed");
-                LogEvent($"EXECUTOR:{ef.ExecutorId ?? "?"}", execEx.Message, ConsoleColor.Red);
+                activity.OnExecutorFailed(ef.ExecutorId ?? "?", execEx);
                 return execEx;
 
             case WorkflowErrorEvent e:
                 var workflowEx = e.Exception ?? new InvalidOperationException("Unknown workflow error");
-                LogEvent("ERROR", workflowEx.Message, ConsoleColor.Red);
+                activity.OnWorkflowError(workflowEx);
                 return workflowEx;
 
             case WorkflowOutputEvent o:
-                ShowFinalResult(o.Data?.ToString() ?? "(no result)");
+                activity.OnWorkflowOutput(o.Data?.ToString() ?? "(no result)");
                 return null;
 
             default:
-                var dataText = evt.Data is not null
-                    ? $"{evt.GetType().Name} | Data: {evt.Data}"
-                    : evt.GetType().Name;
-                LogEvent("WORKFLOW", dataText, ConsoleColor.Cyan);
+                logger.LogDebug("Unhandled workflow event: {Type}", evt.GetType().Name);
                 return null;
         }
     }
