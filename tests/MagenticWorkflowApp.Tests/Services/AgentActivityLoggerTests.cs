@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Linq;
 using MagenticWorkflowApp.Interfaces;
 using MagenticWorkflowApp.Models;
@@ -149,5 +152,56 @@ public class AgentActivityLoggerTests
             e.FormattedMessage.Contains("Workflow output") &&
             e.FormattedMessage.Contains("final-answer"));
         Assert.Contains("final-answer", writer.AllText);
+    }
+
+    [Fact]
+    public void OnTurnCompleted_StartsAndStopsActivity_WithTags()
+    {
+        var stopped = new List<System.Diagnostics.Activity>();
+        using var listener = new System.Diagnostics.ActivityListener
+        {
+            ShouldListenTo = src => src.Name == "MagenticWorkflowApp.Agents",
+            Sample = (ref System.Diagnostics.ActivityCreationOptions<System.Diagnostics.ActivityContext> _) =>
+                System.Diagnostics.ActivitySamplingResult.AllData,
+            ActivityStopped = a => stopped.Add(a),
+        };
+        System.Diagnostics.ActivitySource.AddActivityListener(listener);
+
+        var (logger, _) = Build();
+        logger.SetWorkflowMode(WorkflowDisplayMode.Sequential);
+
+        logger.OnChunk("Alice", "abc");
+        logger.OnChunk("Alice", "def");
+        logger.OnTurnCompleted("Alice");
+
+        var span = Assert.Single(stopped, a => a.OperationName.StartsWith("agent.turn."));
+        Assert.Equal("agent.turn.Alice", span.OperationName);
+        Assert.Contains(span.Tags, t => t.Key == "chunks" && t.Value == "2");
+        Assert.Contains(span.Tags, t => t.Key == "text.length" && t.Value == "6");
+    }
+
+    [Fact]
+    public void OnTurnCompleted_RecordsMetrics()
+    {
+        var counterValues = new List<long>();
+        var histogramValues = new List<double>();
+        using var listener = new System.Diagnostics.Metrics.MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Meter.Name == "MagenticWorkflowApp.Agents")
+                    l.EnableMeasurementEvents(instrument);
+            },
+        };
+        listener.SetMeasurementEventCallback<long>((inst, m, t, _) => counterValues.Add(m));
+        listener.SetMeasurementEventCallback<double>((inst, m, t, _) => histogramValues.Add(m));
+        listener.Start();
+
+        var (logger, _) = Build();
+        logger.OnChunk("Alice", "abc");
+        logger.OnTurnCompleted("Alice");
+
+        Assert.Equal(1, counterValues.Sum());
+        Assert.Single(histogramValues);
     }
 }

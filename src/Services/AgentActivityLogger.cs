@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Text;
 using MagenticWorkflowApp.Interfaces;
 using MagenticWorkflowApp.Models;
@@ -13,6 +15,11 @@ public sealed class AgentActivityLogger : IAgentActivityLogger
 
     private readonly ConcurrentDictionary<string, AgentTurnState> turns = new(StringComparer.Ordinal);
     private WorkflowDisplayMode mode = WorkflowDisplayMode.Sequential;
+
+    private static readonly ActivitySource ActivitySource = new("MagenticWorkflowApp.Agents");
+    private static readonly Meter Meter = new("MagenticWorkflowApp.Agents");
+    private static readonly Counter<long> TurnsCompleted = Meter.CreateCounter<long>("agent.turns.completed");
+    private static readonly Histogram<double> TurnDurationMs = Meter.CreateHistogram<double>("agent.turn.duration.ms");
 
     public AgentActivityLogger(ILogger<AgentActivityLogger> logger, IConsoleWriter console)
     {
@@ -30,6 +37,7 @@ public sealed class AgentActivityLogger : IAgentActivityLogger
             var state = turns.GetOrAdd(agent, newState);
             if (ReferenceEquals(state, newState))
             {
+                state.Activity = ActivitySource.StartActivity($"agent.turn.{agent}");
                 logger.LogInformation("Agent {Agent} turn started", agent);
                 if (mode == WorkflowDisplayMode.Sequential)
                     console.WriteLineWithColor($"\n┌── {agent} ──", ConsoleColor.Cyan);
@@ -47,6 +55,7 @@ public sealed class AgentActivityLogger : IAgentActivityLogger
             var state = turns.GetOrAdd(agent, newState);
             if (ReferenceEquals(state, newState))
             {
+                state.Activity = ActivitySource.StartActivity($"agent.turn.{agent}");
                 logger.LogInformation("Agent {Agent} turn started", agent);
                 if (mode == WorkflowDisplayMode.Sequential)
                     console.WriteLineWithColor($"\n┌── {agent} ──", ConsoleColor.Cyan);
@@ -76,6 +85,14 @@ public sealed class AgentActivityLogger : IAgentActivityLogger
             var chunks = state?.ChunkCount ?? 0;
             var durationMs = state is null ? 0 : (DateTime.UtcNow - state.StartedUtc).TotalMilliseconds;
             var text = fullText ?? state?.Buffer.ToString() ?? string.Empty;
+
+            state?.Activity?.SetTag("chunks", chunks.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            state?.Activity?.SetTag("text.length", text.Length.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            state?.Activity?.SetTag("durationMs", ((long)durationMs).ToString(System.Globalization.CultureInfo.InvariantCulture));
+            state?.Activity?.Dispose();
+
+            TurnsCompleted.Add(1, new KeyValuePair<string, object?>("agent", agent));
+            TurnDurationMs.Record(durationMs, new KeyValuePair<string, object?>("agent", agent));
 
             if (mode == WorkflowDisplayMode.Sequential)
                 console.WriteLineWithColor($"\n└── end {agent} ──", ConsoleColor.Cyan);
@@ -156,6 +173,10 @@ public sealed class AgentActivityLogger : IAgentActivityLogger
             {
                 if (turns.TryRemove(key, out var state))
                 {
+                    state.Activity?.SetTag("aborted", true);
+                    state.Activity?.SetTag("abort.reason", reason);
+                    state.Activity?.SetStatus(ActivityStatusCode.Error, reason);
+                    state.Activity?.Dispose();
                     logger.LogWarning(
                         "Pending turn for {Agent} flushed: reason={Reason}, chunks={Chunks}",
                         key, reason, state.ChunkCount);
@@ -180,5 +201,6 @@ public sealed class AgentActivityLogger : IAgentActivityLogger
         public StringBuilder Buffer { get; } = new();
         public int ChunkCount { get; set; }
         public object Lock { get; } = new();
+        public Activity? Activity { get; set; }
     }
 }
