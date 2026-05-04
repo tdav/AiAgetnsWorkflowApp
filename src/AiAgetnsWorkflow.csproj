@@ -7,6 +7,7 @@
 		<Nullable>enable</Nullable>
 		<NoWarn>SKEXP0110;SKEXP0001;SKEXP0010</NoWarn>
 		<UserSecretsId>0dbb0e1c-636f-48d5-8b4e-e931d59f46dd</UserSecretsId>
+		<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -61,6 +62,9 @@
 		</None>
 		<None Update="workflow-simple.json">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="workflow-sum.json">
+		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
 		<None Update="workflow-with-mcp.json">
 		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

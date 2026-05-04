@@ -1,5 +1,4 @@
 using MagenticWorkflowApp.Services;
-using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
 namespace AiAgetnsWorkflow.Tests.Tools;

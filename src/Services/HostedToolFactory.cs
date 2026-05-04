@@ -1,5 +1,4 @@
 using MagenticWorkflowApp.Interfaces;
-using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
 namespace MagenticWorkflowApp.Services;
