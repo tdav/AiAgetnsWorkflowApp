@@ -13,6 +13,8 @@ using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
 using OpenAI;
+using System.ClientModel.Primitives;
+using System.Text.Json;
 
 namespace MagenticWorkflowApp.Services;
 
@@ -341,7 +343,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         var skAgents = new List<ChatCompletionAgent>();
         foreach (var agentConfig in config.Agents)
         {
-            var kernel = BuildKernel(agentConfig.ModelId, openAiApiKey, ollamaEndpoint);
+            var kernel = BuildKernel(agentConfig.ModelId, openAiApiKey, ollamaEndpoint, agentConfig.EnableThinking);
 
             var toolCount = agentConfig.Tools.Count + agentConfig.McpServers.Count + agentConfig.Plugins.Count;
             if (toolCount > 0)
@@ -364,12 +366,8 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
             });
         }
 
-        var managerKernel = BuildKernel(config.Manager.ModelId, openAiApiKey, ollamaEndpoint);
+        var managerKernel = BuildKernel(config.Manager.ModelId, openAiApiKey, ollamaEndpoint, config.Manager.EnableThinking);
         var managerService = managerKernel.GetRequiredService<IChatCompletionService>();
-
-        if (config.Manager.EnableThinking)
-            logger.LogWarning(
-                "Manager enableThinking=true is not supported via StandardMagenticManager (internal prompts cannot be modified); thinking token will not be injected.");
 
         var managerSettings = new OpenAIPromptExecutionSettings { ResponseFormat = "json_object" };
         var manager = new StandardMagenticManager(managerService, managerSettings)
@@ -707,11 +705,6 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
 
         foreach (var agentConfig in config.Agents)
         {
-            if (agentConfig.EnableThinking)
-                logger.LogWarning(
-                    "Agent '{Agent}': EnableThinking is supported only in Magentic workflow; ignored for {WorkflowType}",
-                    agentConfig.Name, config.WorkflowType);
-
             var hostedTools = hostedFactory.Create(agentConfig.Tools);
             var mcpTools = await mcpPool.GetToolsAsync(agentConfig.McpServers, ct).ConfigureAwait(false);
             var pluginTools = ResolvePluginTools(agentConfig);
@@ -722,7 +715,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
                 "Agent {Agent} resolved tools: hosted={H}, mcp={M}, plugins={P}",
                 agentConfig.Name, hostedTools.Count, mcpTools.Count, pluginTools.Count);
 
-            var chatClient = BuildChatClient(agentConfig.ModelId, openAiApiKey, azureEndpoint, ollamaEndpoint);
+            var chatClient = BuildChatClient(agentConfig.ModelId, openAiApiKey, azureEndpoint, ollamaEndpoint, agentConfig.EnableThinking);
             agents[agentConfig.Name] = chatClient.AsAIAgent(
                 instructions: agentConfig.Instructions,
                 name: agentConfig.Name,
@@ -749,14 +742,13 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
 
 
     private static IChatClient BuildChatClient(
-        string modelId, string? openAiApiKey, string? azureEndpoint, string? ollamaEndpoint = null)
+        string modelId, string? openAiApiKey, string? azureEndpoint, string? ollamaEndpoint = null, bool enableThinking = false)
     {
         if (!string.IsNullOrWhiteSpace(ollamaEndpoint))
         {
-            // Ollama предоставляет OpenAI-совместимый API
-            var ollamaClient = new OpenAIClient(
-                new System.ClientModel.ApiKeyCredential("ollama"),
-                new OpenAI.OpenAIClientOptions { Endpoint = new Uri(ollamaEndpoint + "/v1"), NetworkTimeout = TimeSpan.FromMinutes(5) });
+            var options = new OpenAI.OpenAIClientOptions { Endpoint = new Uri(ollamaEndpoint + "/v1"), NetworkTimeout = TimeSpan.FromMinutes(5) };
+            options.AddPolicy(new OllamaThinkingPolicy(enableThinking), PipelinePosition.PerCall);
+            var ollamaClient = new OpenAIClient(new System.ClientModel.ApiKeyCredential("ollama"), options);
             return ollamaClient.GetChatClient(modelId).AsIChatClient();
         }
         if (!string.IsNullOrWhiteSpace(azureEndpoint))
@@ -768,17 +760,15 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         return openAi.GetChatClient(modelId).AsIChatClient();
     }
 
-    private static Kernel BuildKernel(string modelId, string? openAiApiKey, string? ollamaEndpoint)
+    private static Kernel BuildKernel(string modelId, string? openAiApiKey, string? ollamaEndpoint, bool enableThinking = false)
     {
         if (!string.IsNullOrWhiteSpace(ollamaEndpoint))
         {
-            // Ollama: OpenAI-совместимый endpoint
+            var options = new OpenAI.OpenAIClientOptions { Endpoint = new Uri(ollamaEndpoint + "/v1"), NetworkTimeout = TimeSpan.FromMinutes(5) };
+            options.AddPolicy(new OllamaThinkingPolicy(enableThinking), PipelinePosition.PerCall);
+            var ollamaClient = new OpenAIClient(new System.ClientModel.ApiKeyCredential("ollama"), options);
             return Kernel.CreateBuilder()
-                .AddOpenAIChatCompletion(
-                    modelId: modelId,
-                    apiKey: "ollama",
-                    endpoint: new Uri(ollamaEndpoint + "/v1"),
-                    httpClient: new HttpClient { Timeout = TimeSpan.FromMinutes(5) })
+                .AddOpenAIChatCompletion(modelId, ollamaClient)
                 .Build();
         }
         return Kernel.CreateBuilder()
@@ -793,5 +783,42 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
                 if (!pluginRegistry.TryGet(name, out _))
                     throw new WorkflowValidationException(
                         $"Agent '{agent.Name}' references unknown plugin '{name}'");
+    }
+
+    private sealed class OllamaThinkingPolicy : PipelinePolicy
+    {
+        private readonly bool _think;
+
+        internal OllamaThinkingPolicy(bool think) => _think = think;
+
+        public override void Process(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int currentIndex)
+        {
+            InjectThink(message);
+            ProcessNext(message, pipeline, currentIndex);
+        }
+
+        public override async ValueTask ProcessAsync(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int currentIndex)
+        {
+            InjectThink(message);
+            await ProcessNextAsync(message, pipeline, currentIndex).ConfigureAwait(false);
+        }
+
+        private void InjectThink(PipelineMessage message)
+        {
+            if (message.Request?.Content is null) return;
+            using var ms = new MemoryStream();
+            message.Request.Content.WriteTo(ms, CancellationToken.None);
+            ms.Position = 0;
+            using var doc = JsonDocument.Parse(ms);
+            using var output = new MemoryStream();
+            using var writer = new Utf8JsonWriter(output);
+            writer.WriteStartObject();
+            foreach (var prop in doc.RootElement.EnumerateObject())
+                prop.WriteTo(writer);
+            writer.WriteBoolean("think", _think);
+            writer.WriteEndObject();
+            writer.Flush();
+            message.Request.Content = System.ClientModel.BinaryContent.Create(new BinaryData(output.ToArray()));
+        }
     }
 }
