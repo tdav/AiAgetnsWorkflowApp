@@ -16,21 +16,21 @@
       "name": "ClockAgent",
       "description": "Reports the current UTC timestamp",
       "instructions": "Call TimePlugin.GetCurrentTime once and return the ISO-8601 timestamp.",
-      "modelId": "gpt-4",
+      "modelId": "bjoernb/gemma4-e2b-fast",
       "plugins": ["TimePlugin"]
     },
     {
       "name": "WeatherAgent",
       "description": "Reports weather for two cities",
       "instructions": "Use WeatherPlugin.GetWeather for both 'Moscow' and 'Tokyo'. Return both lines exactly as the tool produces them.",
-      "modelId": "gpt-4",
+      "modelId": "bjoernb/gemma4-e2b-fast",
       "plugins": ["WeatherPlugin"]
     },
     {
       "name": "BriefingAgent",
       "description": "Composes a one-paragraph briefing",
       "instructions": "Combine the timestamp from ClockAgent and the weather lines from WeatherAgent into a one-paragraph daily briefing.",
-      "modelId": "gpt-4"
+      "modelId": "bjoernb/gemma4-e2b-fast"
     }
   ],
 

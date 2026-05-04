@@ -4,7 +4,7 @@
   "task": "Create a comprehensive business plan for a SaaS startup providing AI-powered code review tools. Cover: 1) Market analysis with competitor research, 2) Technical architecture, 3) 3-year financial projections, 4) Go-to-market strategy, 5) Risk assessment. Tag the report with the current UTC time.",
 
   "manager": {
-    "modelId": "gpt-4",
+    "modelId": "bjoernb/gemma4-e2b-fast",
     "maxRoundCount": 15,
     "maxStallCount": 4,
     "maxResetCount": 3,
@@ -16,7 +16,7 @@
       "name": "TimekeeperAgent",
       "description": "Stamps the report with a UTC timestamp",
       "instructions": "Call TimePlugin once and return the timestamp.",
-      "modelId": "gpt-4",
+      "modelId": "bjoernb/gemma4-e2b-fast",
       "plugins": ["TimePlugin"],
       "metadata": { "department": "operations" }
     },
@@ -24,21 +24,21 @@
       "name": "MarketResearchAgent",
       "description": "Market analysis, competitor research, trends",
       "instructions": "Analyze market opportunities, identify competitors, assess market size and trends. Provide data-driven insights with sources.",
-      "modelId": "gpt-4o-search-preview",
+      "modelId": "bjoernb/gemma4-e2b-fast",
       "metadata": { "priority": "critical", "department": "research" }
     },
     {
       "name": "TechnicalArchitectAgent",
       "description": "Software architecture and system design",
       "instructions": "Design scalable, secure technical architectures. Cover cloud infrastructure, microservices, databases, APIs, security. Include diagrams and specifications.",
-      "modelId": "gpt-4",
+      "modelId": "bjoernb/gemma4-e2b-fast",
       "metadata": { "priority": "high", "department": "engineering" }
     },
     {
       "name": "FinancialAnalystAgent",
       "description": "Financial modeling and projections",
       "instructions": "Build revenue forecasts, cost structures, cash flow analysis, break-even calculations. Use realistic assumptions and provide sensitivity analysis.",
-      "modelId": "gpt-4",
+      "modelId": "bjoernb/gemma4-e2b-fast",
       "tools": ["CodeInterpreter"],
       "metadata": { "priority": "critical", "department": "finance" }
     },
@@ -46,21 +46,21 @@
       "name": "MarketingStrategistAgent",
       "description": "Go-to-market and marketing strategy",
       "instructions": "Develop GTM strategy: customer acquisition channels, pricing, brand positioning, growth tactics. Focus on B2B SaaS best practices.",
-      "modelId": "gpt-4",
+      "modelId": "bjoernb/gemma4-e2b-fast",
       "metadata": { "priority": "high", "department": "marketing" }
     },
     {
       "name": "RiskAnalystAgent",
       "description": "Risk assessment and mitigation",
       "instructions": "Identify technical, market, financial, operational, and legal risks. Propose mitigation strategies with probability and impact.",
-      "modelId": "gpt-4",
+      "modelId": "bjoernb/gemma4-e2b-fast",
       "metadata": { "priority": "medium", "department": "operations" }
     },
     {
       "name": "BusinessWriterAgent",
       "description": "Final business document writer",
       "instructions": "Synthesize all sources into a cohesive, executive-level business plan. Use clear language and proper formatting.",
-      "modelId": "gpt-4",
+      "modelId": "bjoernb/gemma4-e2b-fast",
       "metadata": { "priority": "medium", "department": "operations" }
     }
   ],

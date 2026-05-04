@@ -17,7 +17,7 @@
       "name": "DataCollectorAgent",
       "description": "Collects information from sources",
       "instructions": "Gather information about quantum computing and cryptography. Include recent papers, developments, and industry news. Stamp the report with the current UTC time.",
-      "modelId": "gpt-4o-search-preview",
+      "modelId": "bjoernb/gemma4-e2b-fast",
       "plugins": ["TimePlugin"],
       "metadata": { "stage": "collection", "priority": "high" }
     },
@@ -25,14 +25,14 @@
       "name": "ResearchAnalystAgent",
       "description": "Analyzes data and identifies insights",
       "instructions": "Analyze the collected data, identify trends, evaluate sources, and synthesize findings.",
-      "modelId": "gpt-4",
+      "modelId": "bjoernb/gemma4-e2b-fast",
       "metadata": { "stage": "analysis", "priority": "high" }
     },
     {
       "name": "SecurityExpertAgent",
       "description": "Evaluates security implications",
       "instructions": "Assess security implications of quantum computing on cryptography. Identify vulnerabilities and mitigation strategies.",
-      "modelId": "gpt-4",
+      "modelId": "bjoernb/gemma4-e2b-fast",
       "tools": ["CodeInterpreter"],
       "metadata": { "stage": "security_assessment", "priority": "critical" }
     },
@@ -40,7 +40,7 @@
       "name": "ReportWriterAgent",
       "description": "Synthesizes findings into a report",
       "instructions": "Create a structured report with executive summary, analysis, conclusions, and recommendations.",
-      "modelId": "gpt-4",
+      "modelId": "bjoernb/gemma4-e2b-fast",
       "metadata": { "stage": "documentation", "priority": "high" }
     }
   ],

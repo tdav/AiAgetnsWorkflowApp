@@ -4,7 +4,7 @@
   "task": "Determine the current UTC time, then research the state of renewable energy adoption globally and provide a summary with key statistics for 2024.",
 
   "manager": {
-    "modelId": "gpt-4",
+    "modelId": "bjoernb/gemma4-e2b-fast",
     "maxRoundCount": 5,
     "maxStallCount": 2,
     "maxResetCount": 1,
@@ -16,20 +16,20 @@
       "name": "TimekeeperAgent",
       "description": "Provides current UTC timestamp for report metadata",
       "instructions": "Use TimePlugin to get the current UTC time. Return only the timestamp.",
-      "modelId": "gpt-4",
+      "modelId": "bjoernb/gemma4-e2b-fast",
       "plugins": ["TimePlugin"]
     },
     {
       "name": "ResearchAgent",
       "description": "Finds and gathers information from various sources",
       "instructions": "Find reliable information on renewable energy adoption. Present clearly with citations where possible.",
-      "modelId": "gpt-4"
+      "modelId": "bjoernb/gemma4-e2b-fast"
     },
     {
       "name": "AnalystAgent",
       "description": "Analyzes data and creates summaries",
       "instructions": "Analyze the gathered information and produce a concise, well-structured summary.",
-      "modelId": "gpt-4"
+      "modelId": "bjoernb/gemma4-e2b-fast"
     }
   ],
 

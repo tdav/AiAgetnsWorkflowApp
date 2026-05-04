@@ -1,8 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using MagenticWorkflowApp.Exceptions;
 using MagenticWorkflowApp.Interfaces;
 using MagenticWorkflowApp.Models;
@@ -10,13 +5,13 @@ using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
 using Microsoft.SemanticKernel.Agents.Magentic;
 using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
 using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.SemanticKernel.Connectors.OpenAI;
 using OpenAI;
 
 namespace MagenticWorkflowApp.Services;
@@ -26,16 +21,16 @@ namespace MagenticWorkflowApp.Services;
 /// </summary>
 public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
 {
-    private const int MagenticTimeoutMinutes = 5;
+    private const int MagenticTimeoutMinutesDefault = 30;
 
-    private readonly ILogger<MagenticWorkflowOrchestrator> _logger;
-    private readonly ILoggerFactory _loggerFactory;
-    private readonly IWorkflowJsonLoader _jsonLoader;
-    private readonly IWorkflowVisualizer _visualizer;
-    private readonly IConfiguration _configuration;
-    private readonly IMcpClientPool _mcpPool;
-    private readonly IHostedToolFactory _hostedFactory;
-    private readonly IAgentPluginRegistry _pluginRegistry;
+    private readonly ILogger<MagenticWorkflowOrchestrator> logger;
+    private readonly ILoggerFactory loggerFactory;
+    private readonly IWorkflowJsonLoader jsonLoader;
+    private readonly IWorkflowVisualizer visualizer;
+    private readonly IConfiguration configuration;
+    private readonly IMcpClientPool mcpPool;
+    private readonly IHostedToolFactory hostedFactory;
+    private readonly IAgentPluginRegistry pluginRegistry;
 
     public MagenticWorkflowOrchestrator(
         ILogger<MagenticWorkflowOrchestrator> logger,
@@ -47,14 +42,14 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         IHostedToolFactory hostedFactory,
         IAgentPluginRegistry pluginRegistry)
     {
-        _logger = logger;
-        _loggerFactory = loggerFactory;
-        _jsonLoader = jsonLoader;
-        _visualizer = visualizer;
-        _configuration = configuration;
-        _mcpPool = mcpPool;
-        _hostedFactory = hostedFactory;
-        _pluginRegistry = pluginRegistry;
+        this.logger = logger;
+        this.loggerFactory = loggerFactory;
+        this.jsonLoader = jsonLoader;
+        this.visualizer = visualizer;
+        this.configuration = configuration;
+        this.mcpPool = mcpPool;
+        this.hostedFactory = hostedFactory;
+        this.pluginRegistry = pluginRegistry;
     }
 
     public async Task ExecuteWorkflowFromJsonAsync(string jsonFilePath, CancellationToken cancellationToken = default)
@@ -62,41 +57,52 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         cancellationToken.ThrowIfCancellationRequested();
 
         // Load configuration from JSON
-        var config = await _jsonLoader.LoadConfigurationAsync(jsonFilePath).ConfigureAwait(false);
+        var config = await jsonLoader.LoadConfigurationAsync(jsonFilePath).ConfigureAwait(false);
 
         cancellationToken.ThrowIfCancellationRequested();
 
         // Visualize workflow before execution
-        _visualizer.VisualizeWorkflow(config);
+        visualizer.VisualizeWorkflow(config);
 
         // Validate plugin references and register MCP servers
         ValidatePluginReferences(config);
-        await _mcpPool.RegisterServersAsync(config.McpServers, cancellationToken).ConfigureAwait(false);
+        await mcpPool.RegisterServersAsync(config.McpServers, cancellationToken).ConfigureAwait(false);
 
         cancellationToken.ThrowIfCancellationRequested();
 
         // Get API keys from configuration
-        var openAiApiKey = _configuration["OpenAI:ApiKey"];
-        var azureOpenAiEndpoint = _configuration["AzureOpenAI:Endpoint"];
+        var openAiApiKey = configuration["OpenAI:ApiKey"];
+        var azureOpenAiEndpoint = configuration["AzureOpenAI:Endpoint"];
+        var ollamaEndpoint = configuration["Ollama:Endpoint"];
 
-        if (string.IsNullOrWhiteSpace(openAiApiKey) && string.IsNullOrWhiteSpace(azureOpenAiEndpoint))
+        if (string.IsNullOrWhiteSpace(openAiApiKey)
+            && string.IsNullOrWhiteSpace(azureOpenAiEndpoint)
+            && string.IsNullOrWhiteSpace(ollamaEndpoint))
         {
             Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine("⚠️  Warning: No OpenAI or Azure OpenAI configuration found!");
+            Console.WriteLine("⚠️  Warning: No OpenAI, Azure OpenAI or Ollama configuration found!");
             Console.WriteLine("   This is a DEMO mode - simulating workflow execution.");
             Console.ResetColor();
             await SimulateWorkflowExecutionAsync(config).ConfigureAwait(false);
             return;
         }
 
+        if (!string.IsNullOrWhiteSpace(ollamaEndpoint))
+        {
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine($"🦙 Using local Ollama endpoint: {ollamaEndpoint}");
+            Console.ResetColor();
+        }
+
         // Execute actual workflow based on type
-        await ExecuteActualWorkflowAsync(config, openAiApiKey, azureOpenAiEndpoint).ConfigureAwait(false);
+        await ExecuteActualWorkflowAsync(config, openAiApiKey, azureOpenAiEndpoint, ollamaEndpoint).ConfigureAwait(false);
     }
 
     private async Task ExecuteActualWorkflowAsync(
-        WorkflowConfiguration config, 
-        string? openAiApiKey, 
-        string? azureEndpoint)
+        WorkflowConfiguration config,
+        string? openAiApiKey,
+        string? azureEndpoint,
+        string? ollamaEndpoint = null)
     {
         Console.WriteLine("\n" + new string('─', 80));
         Console.ForegroundColor = ConsoleColor.Green;
@@ -104,25 +110,19 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         Console.ResetColor();
         Console.WriteLine(new string('─', 80) + "\n");
 
-        /*
-         * ACTUAL IMPLEMENTATION WITH MICROSOFT AGENT FRAMEWORK
-         * 
-         * When you install the required NuGet packages, uncomment and use this code:
-         */
-
         switch (config.WorkflowType.ToLower())
         {
             case "sequential":
-                await ExecuteSequentialWorkflowAsync(config, openAiApiKey, azureEndpoint);
+                await ExecuteSequentialWorkflowAsync(config, openAiApiKey, azureEndpoint, ollamaEndpoint);
                 break;
             case "concurrent":
-                await ExecuteConcurrentWorkflowAsync(config, openAiApiKey, azureEndpoint);
+                await ExecuteConcurrentWorkflowAsync(config, openAiApiKey, azureEndpoint, ollamaEndpoint);
                 break;
             case "conditional":
-                await ExecuteConditionalWorkflowAsync(config, openAiApiKey, azureEndpoint);
+                await ExecuteConditionalWorkflowAsync(config, openAiApiKey, azureEndpoint, ollamaEndpoint);
                 break;
             case "magentic":
-                await ExecuteMagenticWorkflowAsync(config, openAiApiKey, azureEndpoint);
+                await ExecuteMagenticWorkflowAsync(config, openAiApiKey, azureEndpoint, ollamaEndpoint);
                 break;
             default:
                 throw new NotSupportedException($"Workflow type '{config.WorkflowType}' is not supported");
@@ -132,10 +132,11 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
     private async Task ExecuteSequentialWorkflowAsync(
         WorkflowConfiguration config,
         string? openAiApiKey,
-        string? azureEndpoint)
+        string? azureEndpoint,
+        string? ollamaEndpoint = null)
     {
         var agents = await CreateAgentsFromConfigurationAsync(
-            config, openAiApiKey, azureEndpoint, default).ConfigureAwait(false);
+            config, openAiApiKey, azureEndpoint, ollamaEndpoint, default).ConfigureAwait(false);
 
         var startName = config.Orchestration?.StartAgent
             ?? throw new WorkflowValidationException(
@@ -201,7 +202,8 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
     private async Task ExecuteConcurrentWorkflowAsync(
         WorkflowConfiguration config,
         string? openAiApiKey,
-        string? azureEndpoint)
+        string? azureEndpoint,
+        string? ollamaEndpoint = null)
     {
         var participantNames = config.Orchestration?.Concurrent?.ParticipantAgents;
         if (participantNames is null || participantNames.Count == 0)
@@ -209,7 +211,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
                 "Concurrent workflow requires Orchestration.Concurrent.ParticipantAgents (non-empty list)");
 
         var agents = await CreateAgentsFromConfigurationAsync(
-            config, openAiApiKey, azureEndpoint, default).ConfigureAwait(false);
+            config, openAiApiKey, azureEndpoint, ollamaEndpoint, default).ConfigureAwait(false);
 
         // Pre-validate participant references: every name must map to a known agent.
         foreach (var name in participantNames)
@@ -222,7 +224,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         var participants = participantNames.Select(n => agents[n]).ToArray();
 
         var strategy = config.Orchestration?.Concurrent?.AggregationStrategy ?? "Collect";
-        _logger.LogInformation(
+        logger.LogInformation(
             "Concurrent workflow: {Count} participants, aggregation strategy '{Strategy}' (default aggregator)",
             participants.Length, strategy);
 
@@ -249,10 +251,11 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
     private async Task ExecuteConditionalWorkflowAsync(
         WorkflowConfiguration config,
         string? openAiApiKey,
-        string? azureEndpoint)
+        string? azureEndpoint,
+        string? ollamaEndpoint = null)
     {
         var agents = await CreateAgentsFromConfigurationAsync(
-            config, openAiApiKey, azureEndpoint, default).ConfigureAwait(false);
+            config, openAiApiKey, azureEndpoint, ollamaEndpoint, default).ConfigureAwait(false);
 
         var startName = config.Orchestration?.StartAgent
             ?? throw new WorkflowValidationException(
@@ -275,7 +278,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         // по статическим edges.
         if (config.Orchestration?.ConditionalEdges?.Count > 0)
         {
-            _logger.LogWarning(
+            logger.LogWarning(
                 "Conditional edges present but selection-function support is deferred — статическая часть workflow выполняется как есть.");
         }
 
@@ -328,23 +331,22 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
     private async Task ExecuteMagenticWorkflowAsync(
         WorkflowConfiguration config,
         string? openAiApiKey,
-        string? azureEndpoint)
+        string? azureEndpoint,
+        string? ollamaEndpoint = null)
     {
-        if (string.IsNullOrWhiteSpace(openAiApiKey))
+        if (string.IsNullOrWhiteSpace(openAiApiKey) && string.IsNullOrWhiteSpace(ollamaEndpoint))
             throw new WorkflowValidationException(
-                "Magentic workflow requires OpenAI API key (Azure not yet supported for Magentic).");
+                "Magentic workflow requires OpenAI API key or Ollama endpoint.");
 
         var skAgents = new List<ChatCompletionAgent>();
         foreach (var agentConfig in config.Agents)
         {
-            var kernel = Kernel.CreateBuilder()
-                .AddOpenAIChatCompletion(agentConfig.ModelId, openAiApiKey)
-                .Build();
+            var kernel = BuildKernel(agentConfig.ModelId, openAiApiKey, ollamaEndpoint);
 
             var toolCount = agentConfig.Tools.Count + agentConfig.McpServers.Count + agentConfig.Plugins.Count;
             if (toolCount > 0)
             {
-                _logger.LogWarning(
+                logger.LogWarning(
                     "Agent '{Agent}' has {Count} tool(s) configured, but tool bridging to SemanticKernel is deferred for Magentic workflows",
                     agentConfig.Name, toolCount);
             }
@@ -358,12 +360,10 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
             });
         }
 
-        var managerKernel = Kernel.CreateBuilder()
-            .AddOpenAIChatCompletion(config.Manager.ModelId, openAiApiKey)
-            .Build();
+        var managerKernel = BuildKernel(config.Manager.ModelId, openAiApiKey, ollamaEndpoint);
         var managerService = managerKernel.GetRequiredService<IChatCompletionService>();
 
-        var manager = new StandardMagenticManager(managerService, new PromptExecutionSettings())
+        var manager = new StandardMagenticManager(managerService, new OpenAIPromptExecutionSettings { ResponseFormat = "json_object" })
         {
             MaximumInvocationCount = config.Manager.MaxRoundCount,
             MaximumStallCount = config.Manager.MaxStallCount,
@@ -380,7 +380,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
                     ConsoleColor.Yellow);
                 return ValueTask.CompletedTask;
             },
-            LoggerFactory = _loggerFactory,
+            LoggerFactory = loggerFactory,
         };
 
         await using var runtime = new InProcessRuntime();
@@ -392,8 +392,18 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
                 .InvokeAsync(config.Task, runtime, default)
                 .ConfigureAwait(false);
 
+            var timeoutMinutes = MagenticTimeoutMinutesDefault;
+            if (config.Settings.TryGetValue("timeoutSeconds", out var timeoutSecondsStr)
+                && int.TryParse(timeoutSecondsStr, out var timeoutSeconds)
+                && timeoutSeconds > 0)
+            {
+                timeoutMinutes = (int)Math.Ceiling(timeoutSeconds / 60.0);
+            }
+
+            logger.LogInformation("Ожидание результата Magentic workflow, таймаут: {TimeoutMinutes} мин.", timeoutMinutes);
+
             var output = await result
-                .GetValueAsync(TimeSpan.FromMinutes(MagenticTimeoutMinutes), default)
+                .GetValueAsync(TimeSpan.FromMinutes(timeoutMinutes), default)
                 .ConfigureAwait(false);
 
             ShowFinalResult(output ?? "(no output)");
@@ -672,23 +682,23 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
     }
 
     private async Task<Dictionary<string, AIAgent>> CreateAgentsFromConfigurationAsync(
-        WorkflowConfiguration config, string? openAiApiKey, string? azureEndpoint, CancellationToken ct)
+        WorkflowConfiguration config, string? openAiApiKey, string? azureEndpoint, string? ollamaEndpoint, CancellationToken ct)
     {
         var agents = new Dictionary<string, AIAgent>(StringComparer.Ordinal);
 
         foreach (var agentConfig in config.Agents)
         {
-            var hostedTools = _hostedFactory.Create(agentConfig.Tools);
-            var mcpTools = await _mcpPool.GetToolsAsync(agentConfig.McpServers, ct).ConfigureAwait(false);
+            var hostedTools = hostedFactory.Create(agentConfig.Tools);
+            var mcpTools = await mcpPool.GetToolsAsync(agentConfig.McpServers, ct).ConfigureAwait(false);
             var pluginTools = ResolvePluginTools(agentConfig);
 
             var allTools = hostedTools.Concat(mcpTools).Concat(pluginTools).ToArray();
 
-            _logger.LogInformation(
+            logger.LogInformation(
                 "Agent {Agent} resolved tools: hosted={H}, mcp={M}, plugins={P}",
                 agentConfig.Name, hostedTools.Count, mcpTools.Count, pluginTools.Count);
 
-            var chatClient = BuildChatClient(agentConfig.ModelId, openAiApiKey, azureEndpoint);
+            var chatClient = BuildChatClient(agentConfig.ModelId, openAiApiKey, azureEndpoint, ollamaEndpoint);
             agents[agentConfig.Name] = chatClient.AsAIAgent(
                 instructions: agentConfig.Instructions,
                 name: agentConfig.Name,
@@ -704,7 +714,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         var tools = new List<AITool>();
         foreach (var name in agentConfig.Plugins)
         {
-            if (!_pluginRegistry.TryGet(name, out var plugin))
+            if (!pluginRegistry.TryGet(name, out var plugin))
                 // Defensive: ValidatePluginReferences runs at start of ExecuteWorkflowFromJsonAsync; this guard handles direct invocation paths.
                 throw new WorkflowValidationException(
                     $"Agent '{agentConfig.Name}' references unknown plugin '{name}'");
@@ -713,24 +723,48 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         return tools;
     }
 
-    private static IChatClient BuildChatClient(string modelId, string? openAiApiKey, string? azureEndpoint)
+    private static IChatClient BuildChatClient(
+        string modelId, string? openAiApiKey, string? azureEndpoint, string? ollamaEndpoint = null)
     {
+        if (!string.IsNullOrWhiteSpace(ollamaEndpoint))
+        {
+            // Ollama предоставляет OpenAI-совместимый API
+            var ollamaClient = new OpenAIClient(
+                new System.ClientModel.ApiKeyCredential("ollama"),
+                new OpenAI.OpenAIClientOptions { Endpoint = new Uri(ollamaEndpoint + "/v1") });
+            return ollamaClient.GetChatClient(modelId).AsIChatClient();
+        }
         if (!string.IsNullOrWhiteSpace(azureEndpoint))
         {
-            // Azure.AI.OpenAI пакет ещё не подключён к проекту — вернёмся к этому в Task 13/14.
             throw new NotSupportedException(
-                "Azure OpenAI endpoint is configured, but Azure.AI.OpenAI package is not yet referenced. " +
-                "Will be enabled in upcoming tasks.");
+                "Azure OpenAI endpoint is configured, but Azure.AI.OpenAI package is not yet referenced.");
         }
         var openAi = new OpenAIClient(openAiApiKey!);
         return openAi.GetChatClient(modelId).AsIChatClient();
+    }
+
+    private static Kernel BuildKernel(string modelId, string? openAiApiKey, string? ollamaEndpoint)
+    {
+        if (!string.IsNullOrWhiteSpace(ollamaEndpoint))
+        {
+            // Ollama: OpenAI-совместимый endpoint
+            return Kernel.CreateBuilder()
+                .AddOpenAIChatCompletion(
+                    modelId: modelId,
+                    apiKey: "ollama",
+                    endpoint: new Uri(ollamaEndpoint + "/v1"))
+                .Build();
+        }
+        return Kernel.CreateBuilder()
+            .AddOpenAIChatCompletion(modelId, openAiApiKey!)
+            .Build();
     }
 
     private void ValidatePluginReferences(WorkflowConfiguration config)
     {
         foreach (var agent in config.Agents)
             foreach (var name in agent.Plugins)
-                if (!_pluginRegistry.TryGet(name, out _))
+                if (!pluginRegistry.TryGet(name, out _))
                     throw new WorkflowValidationException(
                         $"Agent '{agent.Name}' references unknown plugin '{name}'");
     }

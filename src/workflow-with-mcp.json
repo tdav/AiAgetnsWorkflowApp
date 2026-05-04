@@ -6,7 +6,7 @@
       "name": "FsAgent",
       "description": "Reads filesystem",
       "instructions": "Use the filesystem MCP tools to answer.",
-      "modelId": "gpt-4",
+      "modelId": "bjoernb/gemma4-e2b-fast",
       "mcpServers": ["filesystem"]
     }
   ],
