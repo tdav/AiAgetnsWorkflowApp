@@ -5,6 +5,9 @@
 > 🎯 **4 типа оркестрации:** Sequential, Concurrent, Conditional, Magentic
 > 🔌 **Расширения:** MCP (Model Context Protocol) серверы и C# плагины как инструменты агентов
 
+## gemma 4 practical guide for developers
+https://dev.to/arshtechpro/gemma-4-a-practical-guide-for-developers-2co5
+
 ## Модели
 https://docs.lm-kit.com/lm-kit-net/guides/model-catalog/model-catalog.html
 
