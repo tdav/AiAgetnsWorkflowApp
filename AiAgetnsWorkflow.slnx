@@ -6,4 +6,5 @@
     <Project Path="tests/AiAgetnsWorkflow.Tests/AiAgetnsWorkflow.Tests.csproj" />
     <Project Path="tests/FakeMcpServer/FakeMcpServer.csproj" />
   </Folder>
+  <Project Path="Gemma/Gemma.csproj" Id="fb749624-24e2-426d-a31a-c0fc23b56294" />
 </Solution>
