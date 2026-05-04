@@ -8,7 +8,7 @@ using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace MagenticWorkflowApp.Tests.TestDoubles;
 
-internal sealed class FakeChatCompletionService : IChatCompletionService
+public sealed class FakeChatCompletionService : IChatCompletionService
 {
     public IReadOnlyDictionary<string, object?> Attributes { get; } =
         new Dictionary<string, object?> { ["fake"] = true };
