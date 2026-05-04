@@ -12,9 +12,9 @@ namespace MagenticWorkflowApp.Services;
 
 public sealed class LoggingChatCompletionService : IChatCompletionService
 {
-    internal const int TextTruncationLimit = 1000;
-    internal const string TruncationSuffix = "… (truncated)";
-    internal const string ManagerAgentName = "Manager";
+    public const int TextTruncationLimit = 1000;
+    public const string TruncationSuffix = "… (truncated)";
+    public const string ManagerAgentName = "Manager";
 
     private readonly IChatCompletionService inner;
     private readonly string agentName;
@@ -72,12 +72,72 @@ public sealed class LoggingChatCompletionService : IChatCompletionService
         return result;
     }
 
-    public IAsyncEnumerable<StreamingChatMessageContent> GetStreamingChatMessageContentsAsync(
+    public async IAsyncEnumerable<StreamingChatMessageContent> GetStreamingChatMessageContentsAsync(
         ChatHistory chatHistory,
         PromptExecutionSettings? executionSettings = null,
         Kernel? kernel = null,
-        CancellationToken cancellationToken = default)
-        => throw new NotImplementedException();
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        activity.OnTurnStarted(agentName);
+
+        var managerBuffer = isManager ? new System.Text.StringBuilder() : null;
+        IAsyncEnumerator<StreamingChatMessageContent> enumerator;
+        try
+        {
+            enumerator = inner
+                .GetStreamingChatMessageContentsAsync(chatHistory, executionSettings, kernel, cancellationToken)
+                .GetAsyncEnumerator(cancellationToken);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            activity.OnExecutorFailed(agentName, ex);
+            throw;
+        }
+
+        try
+        {
+            while (true)
+            {
+                bool hasNext;
+                try
+                {
+                    hasNext = await enumerator.MoveNextAsync().ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex)
+                {
+                    activity.OnExecutorFailed(agentName, ex);
+                    throw;
+                }
+
+                if (!hasNext) break;
+                var delta = enumerator.Current;
+                if (managerBuffer is not null)
+                {
+                    if (!string.IsNullOrEmpty(delta.Content)) managerBuffer.Append(delta.Content);
+                }
+                else if (!string.IsNullOrEmpty(delta.Content))
+                {
+                    activity.OnChunk(agentName, delta.Content!);
+                }
+                yield return delta;
+            }
+        }
+        finally
+        {
+            await enumerator.DisposeAsync().ConfigureAwait(false);
+        }
+
+        if (isManager)
+        {
+            activity.OnManagerDecision(ManagerAgentName, Truncate(managerBuffer!.ToString()));
+        }
+        else
+        {
+            activity.OnTurnCompleted(agentName);
+        }
+    }
 
     private static string Truncate(string text)
         => text.Length <= TextTruncationLimit ? text : text.Substring(0, TextTruncationLimit) + TruncationSuffix;
