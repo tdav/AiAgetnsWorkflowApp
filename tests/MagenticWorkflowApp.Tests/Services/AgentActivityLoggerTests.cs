@@ -176,8 +176,8 @@ public class AgentActivityLoggerTests
 
         var span = Assert.Single(stopped, a => a.OperationName.StartsWith("agent.turn."));
         Assert.Equal("agent.turn.Alice", span.OperationName);
-        Assert.Contains(span.Tags, t => t.Key == "chunks" && t.Value == "2");
-        Assert.Contains(span.Tags, t => t.Key == "text.length" && t.Value == "6");
+        Assert.Contains(span.TagObjects, t => t.Key == "chunks" && t.Value is int n && n == 2);
+        Assert.Contains(span.TagObjects, t => t.Key == "text.length" && t.Value is int len && len == 6);
     }
 
     [Fact]

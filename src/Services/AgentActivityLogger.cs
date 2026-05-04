@@ -86,9 +86,9 @@ public sealed class AgentActivityLogger : IAgentActivityLogger
             var durationMs = state is null ? 0 : (DateTime.UtcNow - state.StartedUtc).TotalMilliseconds;
             var text = fullText ?? state?.Buffer.ToString() ?? string.Empty;
 
-            state?.Activity?.SetTag("chunks", chunks.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            state?.Activity?.SetTag("text.length", text.Length.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            state?.Activity?.SetTag("durationMs", ((long)durationMs).ToString(System.Globalization.CultureInfo.InvariantCulture));
+            state?.Activity?.SetTag("chunks", chunks);
+            state?.Activity?.SetTag("text.length", text.Length);
+            state?.Activity?.SetTag("durationMs", (long)durationMs);
             state?.Activity?.Dispose();
 
             TurnsCompleted.Add(1, new KeyValuePair<string, object?>("agent", agent));
