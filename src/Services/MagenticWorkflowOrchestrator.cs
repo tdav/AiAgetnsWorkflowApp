@@ -352,7 +352,13 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         var skAgents = new List<ChatCompletionAgent>();
         foreach (var agentConfig in config.Agents)
         {
-            var kernel = BuildKernel(agentConfig.ModelId, openAiApiKey, ollamaEndpoint, agentConfig.EnableThinking);
+            var kernel = BuildKernel(
+                agentConfig.ModelId,
+                openAiApiKey,
+                ollamaEndpoint,
+                agentConfig.EnableThinking,
+                agentName: agentConfig.Name,
+                activity: activity);
 
             var toolCount = agentConfig.Tools.Count + agentConfig.McpServers.Count + agentConfig.Plugins.Count;
             if (toolCount > 0)
@@ -375,7 +381,13 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
             });
         }
 
-        var managerKernel = BuildKernel(config.Manager.ModelId, openAiApiKey, ollamaEndpoint, config.Manager.EnableThinking);
+        var managerKernel = BuildKernel(
+            config.Manager.ModelId,
+            openAiApiKey,
+            ollamaEndpoint,
+            config.Manager.EnableThinking,
+            agentName: LoggingChatCompletionService.ManagerAgentName,
+            activity: activity);
         var managerService = managerKernel.GetRequiredService<IChatCompletionService>();
 
         var managerSettings = new OpenAIPromptExecutionSettings { ResponseFormat = "json_object" };
@@ -388,22 +400,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
 
         var orchestration = new MagenticOrchestration(manager, skAgents.ToArray())
         {
-            ResponseCallback = response =>
-            {
-                var name = response.AuthorName ?? "?";
-                var text = response.Content ?? string.Empty;
-
-                if (string.Equals(name, config.Manager.ModelId, StringComparison.OrdinalIgnoreCase)
-                    || name.StartsWith("Manager", StringComparison.OrdinalIgnoreCase))
-                {
-                    activity.OnManagerDecision(name, text);
-                }
-                else
-                {
-                    activity.OnTurnCompleted(name, text);
-                }
-                return ValueTask.CompletedTask;
-            },
+            ResponseCallback = _ => ValueTask.CompletedTask,
             LoggerFactory = loggerFactory,
         };
 
