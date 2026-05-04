@@ -26,12 +26,16 @@ public sealed class AgentActivityLogger : IAgentActivityLogger
     {
         SafeRun(() =>
         {
-            turns.GetOrAdd(agent, _ => new AgentTurnState(DateTime.UtcNow));
-            logger.LogInformation("Agent {Agent} turn started", agent);
-            if (mode == WorkflowDisplayMode.Sequential)
-                console.WriteLineWithColor($"\n┌── {agent} ──", ConsoleColor.Cyan);
-            else
-                console.WriteLineWithColor($"\n[{agent}] (started)", ConsoleColor.Cyan);
+            AgentTurnState newState = new(DateTime.UtcNow);
+            var state = turns.GetOrAdd(agent, newState);
+            if (ReferenceEquals(state, newState))
+            {
+                logger.LogInformation("Agent {Agent} turn started", agent);
+                if (mode == WorkflowDisplayMode.Sequential)
+                    console.WriteLineWithColor($"\n┌── {agent} ──", ConsoleColor.Cyan);
+                else
+                    console.WriteLineWithColor($"\n[{agent}] (started)", ConsoleColor.Cyan);
+            }
         });
     }
 
@@ -39,16 +43,16 @@ public sealed class AgentActivityLogger : IAgentActivityLogger
     {
         SafeRun(() =>
         {
-            var state = turns.GetOrAdd(agent, _ =>
+            AgentTurnState newState = new(DateTime.UtcNow);
+            var state = turns.GetOrAdd(agent, newState);
+            if (ReferenceEquals(state, newState))
             {
-                var s = new AgentTurnState(DateTime.UtcNow);
                 logger.LogInformation("Agent {Agent} turn started", agent);
                 if (mode == WorkflowDisplayMode.Sequential)
                     console.WriteLineWithColor($"\n┌── {agent} ──", ConsoleColor.Cyan);
                 else
                     console.WriteLineWithColor($"\n[{agent}] (started)", ConsoleColor.Cyan);
-                return s;
-            });
+            }
 
             lock (state.Lock)
             {
@@ -69,21 +73,9 @@ public sealed class AgentActivityLogger : IAgentActivityLogger
         {
             turns.TryRemove(agent, out var state);
 
-            string text;
-            int chunks;
-            double durationMs;
-            if (fullText is not null)
-            {
-                text = fullText;
-                chunks = state?.ChunkCount ?? 0;
-                durationMs = state is null ? 0 : (DateTime.UtcNow - state.StartedUtc).TotalMilliseconds;
-            }
-            else
-            {
-                text = state?.Buffer.ToString() ?? string.Empty;
-                chunks = state?.ChunkCount ?? 0;
-                durationMs = state is null ? 0 : (DateTime.UtcNow - state.StartedUtc).TotalMilliseconds;
-            }
+            var chunks = state?.ChunkCount ?? 0;
+            var durationMs = state is null ? 0 : (DateTime.UtcNow - state.StartedUtc).TotalMilliseconds;
+            var text = fullText ?? state?.Buffer.ToString() ?? string.Empty;
 
             if (mode == WorkflowDisplayMode.Sequential)
                 console.WriteLineWithColor($"\n└── end {agent} ──", ConsoleColor.Cyan);
