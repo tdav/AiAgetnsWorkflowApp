@@ -388,10 +388,18 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         {
             ResponseCallback = response =>
             {
-                LogEvent(
-                    $"AGENT:{response.AuthorName ?? "?"}",
-                    response.Content ?? "(empty)",
-                    ConsoleColor.Yellow);
+                var name = response.AuthorName ?? "?";
+                var text = response.Content ?? string.Empty;
+
+                if (string.Equals(name, config.Manager.ModelId, StringComparison.OrdinalIgnoreCase)
+                    || name.StartsWith("Manager", StringComparison.OrdinalIgnoreCase))
+                {
+                    activity.OnManagerDecision(name, text);
+                }
+                else
+                {
+                    activity.OnTurnCompleted(name, text);
+                }
                 return ValueTask.CompletedTask;
             },
             LoggerFactory = loggerFactory,
@@ -420,7 +428,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
                 .GetValueAsync(TimeSpan.FromMinutes(timeoutMinutes), default)
                 .ConfigureAwait(false);
 
-            ShowFinalResult(output ?? "(no output)");
+            activity.OnWorkflowOutput(output ?? "(no output)");
         }
         finally
         {
@@ -451,16 +459,14 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
 
     private async Task SimulateSequentialWorkflowAsync(WorkflowConfiguration config)
     {
-        LogEvent("WORKFLOW", $"Starting Sequential execution with {config.Agents.Count} agents", ConsoleColor.Cyan);
+        activity.SetWorkflowMode(WorkflowDisplayMode.Sequential);
 
+        LogEvent("WORKFLOW", $"Starting Sequential execution with {config.Agents.Count} agents", ConsoleColor.Cyan);
         if (config.Orchestration?.StartAgent != null)
-        {
             LogEvent("WORKFLOW", $"Start agent: {config.Orchestration.StartAgent}", ConsoleColor.Cyan);
-        }
 
         await Task.Delay(300);
 
-        // Process agents sequentially following edges
         var processedAgents = new HashSet<string>();
         var currentAgent = config.Orchestration?.StartAgent ?? config.Agents.First().Name;
 
@@ -468,18 +474,15 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         {
             var agent = config.Agents.FirstOrDefault(a => a.Name == currentAgent);
             if (agent == null) break;
-
             processedAgents.Add(currentAgent);
 
             await Task.Delay(400);
-            LogEvent($"AGENT:{agent.Name}", $"Processing using {agent.ModelId}...", ConsoleColor.Yellow);
+            activity.OnChunk(agent.Name, $"Processing using {agent.ModelId}...");
             await Task.Delay(600);
-            LogEvent($"AGENT:{agent.Name}", $"✓ Completed task: {agent.Description}", ConsoleColor.Green);
+            activity.OnTurnCompleted(agent.Name, $"✓ Completed task: {agent.Description}");
 
-            // Find next agent
             var edge = config.Orchestration?.Edges.FirstOrDefault(e => e.From == currentAgent);
             currentAgent = edge?.To;
-
             if (currentAgent != null)
             {
                 await Task.Delay(200);
@@ -488,53 +491,46 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         }
 
         await Task.Delay(300);
-        ShowFinalResult("Sequential pipeline completed successfully!");
+        activity.OnWorkflowOutput("Sequential pipeline completed successfully!");
     }
 
     private async Task SimulateConcurrentWorkflowAsync(WorkflowConfiguration config)
     {
+        activity.SetWorkflowMode(WorkflowDisplayMode.Concurrent);
+
         LogEvent("WORKFLOW", $"Starting Concurrent execution with {config.Agents.Count} agents", ConsoleColor.Cyan);
 
-        var participants = config.Orchestration?.Concurrent?.ParticipantAgents ??
-                          config.Agents.Select(a => a.Name).ToList();
-
+        var participants = config.Orchestration?.Concurrent?.ParticipantAgents
+            ?? config.Agents.Select(a => a.Name).ToList();
         LogEvent("WORKFLOW", $"Participants: {string.Join(", ", participants)}", ConsoleColor.Cyan);
         await Task.Delay(300);
 
-        // Simulate fan-out
         LogEvent("WORKFLOW", "⚡ Fan-out: Distributing task to all agents simultaneously", ConsoleColor.Magenta);
         await Task.Delay(400);
 
-        // Simulate parallel processing
         var tasks = new List<Task>();
         foreach (var agentName in participants)
         {
             var agent = config.Agents.FirstOrDefault(a => a.Name == agentName);
-            if (agent != null)
-            {
-                tasks.Add(SimulateAgentWorkAsync(agent));
-            }
+            if (agent != null) tasks.Add(SimulateAgentWorkAsync(agent));
         }
-
         await Task.WhenAll(tasks);
 
-        // Simulate fan-in
         await Task.Delay(300);
         var strategy = config.Orchestration?.Concurrent?.AggregationStrategy ?? "Collect";
         LogEvent("WORKFLOW", $"⚡ Fan-in: Aggregating results using '{strategy}' strategy", ConsoleColor.Magenta);
         await Task.Delay(400);
 
-        ShowFinalResult($"Concurrent execution completed! All {participants.Count} agents finished.");
+        activity.OnWorkflowOutput($"Concurrent execution completed! All {participants.Count} agents finished.");
     }
 
     private async Task SimulateConditionalWorkflowAsync(WorkflowConfiguration config)
     {
-        LogEvent("WORKFLOW", "Starting Conditional execution with dynamic routing", ConsoleColor.Cyan);
+        activity.SetWorkflowMode(WorkflowDisplayMode.Sequential);
 
+        LogEvent("WORKFLOW", "Starting Conditional execution with dynamic routing", ConsoleColor.Cyan);
         if (config.Orchestration?.StartAgent != null)
-        {
             LogEvent("WORKFLOW", $"Start agent: {config.Orchestration.StartAgent}", ConsoleColor.Cyan);
-        }
 
         await Task.Delay(300);
 
@@ -545,36 +541,28 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         {
             var agent = config.Agents.FirstOrDefault(a => a.Name == currentAgent);
             if (agent == null) break;
-
             processedAgents.Add(currentAgent);
 
             await Task.Delay(400);
-            LogEvent($"AGENT:{agent.Name}", $"Processing using {agent.ModelId}...", ConsoleColor.Yellow);
+            activity.OnChunk(agent.Name, $"Processing using {agent.ModelId}...");
             await Task.Delay(600);
-            LogEvent($"AGENT:{agent.Name}", $"✓ Completed: {agent.Description}", ConsoleColor.Green);
+            activity.OnTurnCompleted(agent.Name, $"✓ Completed: {agent.Description}");
 
-            // Check for conditional edges
             var conditionalEdge = config.Orchestration?.ConditionalEdges
                 .FirstOrDefault(ce => ce.From == currentAgent);
-
             if (conditionalEdge != null)
             {
                 await Task.Delay(300);
-                LogEvent("DECISION", $"Evaluating condition: {conditionalEdge.SelectionFunction}", ConsoleColor.Magenta);
-
-                // Simulate condition evaluation
-                var selectedTargets = conditionalEdge.ToOptions.Take(1).ToList(); // Simulate selecting one option
+                activity.OnManagerDecision("DECISION", $"Evaluating condition: {conditionalEdge.SelectionFunction}");
+                var selectedTargets = conditionalEdge.ToOptions.Take(1).ToList();
                 await Task.Delay(200);
-
-                LogEvent("DECISION", $"✓ Selected target(s): {string.Join(", ", selectedTargets)}", ConsoleColor.Green);
+                activity.OnManagerDecision("DECISION", $"✓ Selected target(s): {string.Join(", ", selectedTargets)}");
                 currentAgent = selectedTargets.FirstOrDefault();
             }
             else
             {
-                // Regular edge
                 var edge = config.Orchestration?.Edges.FirstOrDefault(e => e.From == currentAgent);
                 currentAgent = edge?.To;
-
                 if (currentAgent != null)
                 {
                     await Task.Delay(200);
@@ -584,45 +572,44 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         }
 
         await Task.Delay(300);
-        ShowFinalResult("Conditional workflow completed with dynamic routing!");
+        activity.OnWorkflowOutput("Conditional workflow completed with dynamic routing!");
     }
 
     private async Task SimulateMagenticWorkflowAsync(WorkflowConfiguration config)
     {
-        // Simulate orchestrator initialization
+        activity.SetWorkflowMode(WorkflowDisplayMode.Sequential);
+
         await Task.Delay(500);
         LogEvent("ORCHESTRATOR", "Initializing Magentic Manager...", ConsoleColor.Cyan);
         await Task.Delay(300);
-        LogEvent("ORCHESTRATOR", $"Creating execution plan for task: {config.Task.Substring(0, Math.Min(80, config.Task.Length))}...", ConsoleColor.Cyan);
+        LogEvent("ORCHESTRATOR",
+            $"Creating execution plan for task: {config.Task.Substring(0, Math.Min(80, config.Task.Length))}...",
+            ConsoleColor.Cyan);
 
-        // Simulate agent coordination
         for (int round = 1; round <= 3; round++)
         {
             Console.WriteLine($"\n--- Round {round} ---");
-
             foreach (var agent in config.Agents)
             {
                 await Task.Delay(400);
-                LogEvent($"AGENT:{agent.Name}", $"Executing task using {agent.ModelId}...", ConsoleColor.Yellow);
+                activity.OnChunk(agent.Name, $"Executing task using {agent.ModelId}...");
                 await Task.Delay(600);
-                LogEvent($"AGENT:{agent.Name}", $"[{agent.Description}] Completed subtask.", ConsoleColor.Yellow);
+                activity.OnTurnCompleted(agent.Name, $"[{agent.Description}] Completed subtask.");
             }
-
             await Task.Delay(300);
             LogEvent("ORCHESTRATOR", $"Reviewing progress from round {round}...", ConsoleColor.Cyan);
         }
 
-        // Simulate final result
         await Task.Delay(500);
-        ShowFinalResult($"Magentic orchestration completed! All {config.Agents.Count} agents collaborated successfully.");
+        activity.OnWorkflowOutput($"Magentic orchestration completed! All {config.Agents.Count} agents collaborated successfully.");
     }
 
     private async Task SimulateAgentWorkAsync(AgentConfiguration agent)
     {
         await Task.Delay(500);
-        LogEvent($"AGENT:{agent.Name}", $"[Concurrent] Processing using {agent.ModelId}...", ConsoleColor.Yellow);
-        await Task.Delay(Random.Shared.Next(800, 1500)); // Simulate variable processing time
-        LogEvent($"AGENT:{agent.Name}", $"[Concurrent] ✓ Completed: {agent.Description}", ConsoleColor.Green);
+        activity.OnChunk(agent.Name, $"[Concurrent] Processing using {agent.ModelId}...");
+        await Task.Delay(Random.Shared.Next(800, 1500));
+        activity.OnTurnCompleted(agent.Name, $"[Concurrent] ✓ Completed: {agent.Description}");
     }
 
     private void ShowFinalResult(string message)
