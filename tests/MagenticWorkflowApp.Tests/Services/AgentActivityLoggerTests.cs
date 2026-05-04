@@ -204,4 +204,28 @@ public class AgentActivityLoggerTests
         Assert.Equal(1, counterValues.Sum());
         Assert.Single(histogramValues);
     }
+
+    [Fact]
+    public void Concurrent_TwoAgents_IndependentBuffers_AndPrefixedConsole()
+    {
+        var recorder = new RecordingLogger<AgentActivityLogger>();
+        var writer = new RecordingConsoleWriter();
+        var logger = new AgentActivityLogger(recorder, writer);
+        logger.SetWorkflowMode(WorkflowDisplayMode.Concurrent);
+
+        logger.OnChunk("Alice", "AAA");
+        logger.OnChunk("Bob", "BBB");
+        logger.OnChunk("Alice", "AAA2");
+        logger.OnTurnCompleted("Alice");
+        logger.OnTurnCompleted("Bob");
+
+        var completed = recorder.Entries
+            .Where(e => e.FormattedMessage.Contains("completed turn"))
+            .ToList();
+        Assert.Equal(2, completed.Count);
+        Assert.Contains(completed, e => e.FormattedMessage.Contains("AAAAAA2"));
+        Assert.Contains(completed, e => e.FormattedMessage.Contains("BBB"));
+        Assert.Contains("[Alice] AAA", writer.AllText);
+        Assert.Contains("[Bob] BBB", writer.AllText);
+    }
 }
