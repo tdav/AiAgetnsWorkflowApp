@@ -27,6 +27,19 @@ internal static class Program
             .ReadFrom.Configuration(configuration)
             .CreateLogger();
 
+        var teeFileLogger = new LoggerConfiguration()
+            .MinimumLevel.Verbose()
+            .Enrich.FromLogContext()
+            .WriteTo.File(
+                path: "logs/agents-.log",
+                rollingInterval: Serilog.RollingInterval.Day,
+                outputTemplate: "{Timestamp:HH:mm:ss.fff} [{Level:u3}] [CON] {Message:lj}{NewLine}",
+                shared: true)
+            .CreateLogger();
+
+        Console.SetOut(new SerilogTeeTextWriter(Console.Out, teeFileLogger));
+        Console.SetError(new SerilogTeeTextWriter(Console.Error, teeFileLogger, Serilog.Events.LogEventLevel.Warning));
+
         try
         {
             var services = new ServiceCollection();
@@ -61,6 +74,7 @@ internal static class Program
         }
         finally
         {
+            (teeFileLogger as IDisposable)?.Dispose();
             Log.CloseAndFlush();
         }
     }

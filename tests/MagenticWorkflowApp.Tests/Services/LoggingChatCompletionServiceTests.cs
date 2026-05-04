@@ -13,12 +13,98 @@ namespace MagenticWorkflowApp.Tests.Services;
 public class LoggingChatCompletionServiceTests
 {
     private static (LoggingChatCompletionService sut, FakeChatCompletionService inner, RecordingActivityLogger activity)
-        CreateSut(string agentName = "AgentX")
+        CreateSut(string agentName = "AgentX", bool stripReasoning = false)
     {
         var inner = new FakeChatCompletionService();
         var activity = new RecordingActivityLogger();
-        var sut = new LoggingChatCompletionService(inner, agentName, activity);
+        var sut = new LoggingChatCompletionService(inner, agentName, activity, stripReasoning);
         return (sut, inner, activity);
+    }
+
+    [Fact]
+    public async Task NonStreaming_StripReasoning_RemovesThinkBlockFromContent()
+    {
+        var (sut, inner, activity) = CreateSut("AgentX", stripReasoning: true);
+        inner.NonStreamingResult = new List<ChatMessageContent>
+        {
+            new(AuthorRole.Assistant, "before <think>secret reasoning here</think> after")
+        };
+
+        var result = await sut.GetChatMessageContentsAsync(new ChatHistory());
+
+        Assert.Equal("before  after", result[0].Content);
+        var completed = activity.Calls.Single(c => c.Method == "OnTurnCompleted");
+        Assert.Equal("before  after", completed.Arg2);
+    }
+
+    [Fact]
+    public async Task NonStreaming_StripReasoning_RemovesGemmaPipeThinkBlock()
+    {
+        var (sut, inner, activity) = CreateSut("AgentX", stripReasoning: true);
+        inner.NonStreamingResult = new List<ChatMessageContent>
+        {
+            new(AuthorRole.Assistant, "answer <|think|>chain of thought<|/think|> done")
+        };
+
+        var result = await sut.GetChatMessageContentsAsync(new ChatHistory());
+
+        Assert.Equal("answer  done", result[0].Content);
+    }
+
+    [Fact]
+    public async Task NonStreaming_StripDisabled_KeepsReasoningIntact()
+    {
+        var (sut, inner, _) = CreateSut("AgentX", stripReasoning: false);
+        inner.NonStreamingResult = new List<ChatMessageContent>
+        {
+            new(AuthorRole.Assistant, "x <think>y</think> z")
+        };
+
+        var result = await sut.GetChatMessageContentsAsync(new ChatHistory());
+
+        Assert.Equal("x <think>y</think> z", result[0].Content);
+    }
+
+    [Fact]
+    public async Task Streaming_StripReasoning_OmitsTokensInsideThinkBlockEvenAcrossDeltas()
+    {
+        var (sut, inner, activity) = CreateSut("AgentX", stripReasoning: true);
+        inner.StreamingChunks = new List<StreamingChatMessageContent>
+        {
+            new(AuthorRole.Assistant, "Hi <thi"),
+            new(AuthorRole.Assistant, "nk>internal"),
+            new(AuthorRole.Assistant, " reasoning</thi"),
+            new(AuthorRole.Assistant, "nk> bye"),
+        };
+
+        var collected = new System.Text.StringBuilder();
+        await foreach (var d in sut.GetStreamingChatMessageContentsAsync(new ChatHistory()))
+        {
+            if (!string.IsNullOrEmpty(d.Content)) collected.Append(d.Content);
+        }
+
+        Assert.Equal("Hi  bye", collected.ToString());
+        var chunks = activity.Calls.Where(c => c.Method == "OnChunk").Select(c => c.Arg2).ToArray();
+        Assert.Equal("Hi  bye", string.Concat(chunks));
+        Assert.DoesNotContain(chunks, c => (c ?? string.Empty).Contains("internal", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(chunks, c => (c ?? string.Empty).Contains("reasoning", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Streaming_ManagerWithStrip_OnManagerDecisionExcludesReasoning()
+    {
+        var (sut, inner, activity) = CreateSut("Manager", stripReasoning: true);
+        inner.StreamingChunks = new List<StreamingChatMessageContent>
+        {
+            new(AuthorRole.Assistant, "{\"plan\":\"X\"}<think>"),
+            new(AuthorRole.Assistant, "private"),
+            new(AuthorRole.Assistant, "</think>"),
+        };
+
+        await foreach (var _ in sut.GetStreamingChatMessageContentsAsync(new ChatHistory())) { }
+
+        var decision = activity.Calls.Single(c => c.Method == "OnManagerDecision");
+        Assert.Equal("{\"plan\":\"X\"}", decision.Arg2);
     }
 
     [Fact]
