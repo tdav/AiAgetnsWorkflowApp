@@ -351,19 +351,22 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
                     agentConfig.Name, toolCount);
             }
 
+            var agentSettings = BuildExecutionSettings(agentConfig.EnableThinking, agentConfig.ThinkingBudgetTokens);
             skAgents.Add(new ChatCompletionAgent
             {
                 Name = agentConfig.Name,
                 Description = agentConfig.Description,
                 Instructions = agentConfig.Instructions,
                 Kernel = kernel,
+                Arguments = new KernelArguments(agentSettings),
             });
         }
 
         var managerKernel = BuildKernel(config.Manager.ModelId, openAiApiKey, ollamaEndpoint);
         var managerService = managerKernel.GetRequiredService<IChatCompletionService>();
 
-        var manager = new StandardMagenticManager(managerService, new OpenAIPromptExecutionSettings { ResponseFormat = "json_object" })
+        var managerSettings = BuildExecutionSettings(config.Manager.EnableThinking, config.Manager.ThinkingBudgetTokens, responseFormat: "json_object");
+        var manager = new StandardMagenticManager(managerService, managerSettings)
         {
             MaximumInvocationCount = config.Manager.MaxRoundCount,
             MaximumStallCount = config.Manager.MaxStallCount,
@@ -438,7 +441,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
     private async Task SimulateSequentialWorkflowAsync(WorkflowConfiguration config)
     {
         LogEvent("WORKFLOW", $"Starting Sequential execution with {config.Agents.Count} agents", ConsoleColor.Cyan);
-        
+
         if (config.Orchestration?.StartAgent != null)
         {
             LogEvent("WORKFLOW", $"Start agent: {config.Orchestration.StartAgent}", ConsoleColor.Cyan);
@@ -480,10 +483,10 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
     private async Task SimulateConcurrentWorkflowAsync(WorkflowConfiguration config)
     {
         LogEvent("WORKFLOW", $"Starting Concurrent execution with {config.Agents.Count} agents", ConsoleColor.Cyan);
-        
-        var participants = config.Orchestration?.Concurrent?.ParticipantAgents ?? 
+
+        var participants = config.Orchestration?.Concurrent?.ParticipantAgents ??
                           config.Agents.Select(a => a.Name).ToList();
-        
+
         LogEvent("WORKFLOW", $"Participants: {string.Join(", ", participants)}", ConsoleColor.Cyan);
         await Task.Delay(300);
 
@@ -516,7 +519,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
     private async Task SimulateConditionalWorkflowAsync(WorkflowConfiguration config)
     {
         LogEvent("WORKFLOW", "Starting Conditional execution with dynamic routing", ConsoleColor.Cyan);
-        
+
         if (config.Orchestration?.StartAgent != null)
         {
             LogEvent("WORKFLOW", $"Start agent: {config.Orchestration.StartAgent}", ConsoleColor.Cyan);
@@ -547,11 +550,11 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
             {
                 await Task.Delay(300);
                 LogEvent("DECISION", $"Evaluating condition: {conditionalEdge.SelectionFunction}", ConsoleColor.Magenta);
-                
+
                 // Simulate condition evaluation
                 var selectedTargets = conditionalEdge.ToOptions.Take(1).ToList(); // Simulate selecting one option
                 await Task.Delay(200);
-                
+
                 LogEvent("DECISION", $"✓ Selected target(s): {string.Join(", ", selectedTargets)}", ConsoleColor.Green);
                 currentAgent = selectedTargets.FirstOrDefault();
             }
@@ -585,7 +588,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         for (int round = 1; round <= 3; round++)
         {
             Console.WriteLine($"\n--- Round {round} ---");
-            
+
             foreach (var agent in config.Agents)
             {
                 await Task.Delay(400);
@@ -643,27 +646,37 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
                     $"AGENT:{a.Update?.AuthorName ?? a.ExecutorId ?? "?"}",
                     a.Update?.Text ?? string.Empty,
                     ConsoleColor.Yellow);
+
+                LogEvent($"AGENT:{a.Update?.AuthorName ?? a.ExecutorId ?? "?"}", $"Data: {a.Data}", ConsoleColor.Yellow);
                 return null;
+
             case AgentResponseEvent r:
                 LogEvent(
                     $"AGENT:{r.ExecutorId ?? "?"}",
                     r.Response?.Text ?? "(empty response)",
                     ConsoleColor.Green);
                 return null;
+
             case ExecutorFailedEvent ef:
                 var execEx = ef.Data as Exception
                     ?? new InvalidOperationException($"Executor '{ef.ExecutorId}' failed");
                 LogEvent($"EXECUTOR:{ef.ExecutorId ?? "?"}", execEx.Message, ConsoleColor.Red);
                 return execEx;
+
             case WorkflowErrorEvent e:
                 var workflowEx = e.Exception ?? new InvalidOperationException("Unknown workflow error");
                 LogEvent("ERROR", workflowEx.Message, ConsoleColor.Red);
                 return workflowEx;
+
             case WorkflowOutputEvent o:
                 ShowFinalResult(o.Data?.ToString() ?? "(no result)");
                 return null;
+
             default:
-                LogEvent("WORKFLOW", evt.GetType().Name, ConsoleColor.Cyan);
+                var dataText = evt.Data is not null
+                    ? $"{evt.GetType().Name} | Data: {evt.Data}"
+                    : evt.GetType().Name;
+                LogEvent("WORKFLOW", dataText, ConsoleColor.Cyan);
                 return null;
         }
     }
@@ -688,6 +701,11 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
 
         foreach (var agentConfig in config.Agents)
         {
+            if (agentConfig.EnableThinking)
+                logger.LogWarning(
+                    "Agent '{Agent}': EnableThinking is supported only in Magentic workflow; ignored for {WorkflowType}",
+                    agentConfig.Name, config.WorkflowType);
+
             var hostedTools = hostedFactory.Create(agentConfig.Tools);
             var mcpTools = await mcpPool.GetToolsAsync(agentConfig.McpServers, ct).ConfigureAwait(false);
             var pluginTools = ResolvePluginTools(agentConfig);
@@ -723,6 +741,21 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         return tools;
     }
 
+    private static OpenAIPromptExecutionSettings BuildExecutionSettings(
+        bool enableThinking, int thinkingBudgetTokens, string? responseFormat = null)
+    {
+        var settings = new OpenAIPromptExecutionSettings();
+        if (responseFormat is not null)
+            settings.ResponseFormat = responseFormat;
+        if (enableThinking)
+            settings.ExtensionData = new Dictionary<string, object>
+            {
+                ["think"] = true,
+                ["thinking_budget"] = thinkingBudgetTokens,
+            };
+        return settings;
+    }
+
     private static IChatClient BuildChatClient(
         string modelId, string? openAiApiKey, string? azureEndpoint, string? ollamaEndpoint = null)
     {
@@ -731,7 +764,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
             // Ollama предоставляет OpenAI-совместимый API
             var ollamaClient = new OpenAIClient(
                 new System.ClientModel.ApiKeyCredential("ollama"),
-                new OpenAI.OpenAIClientOptions { Endpoint = new Uri(ollamaEndpoint + "/v1") });
+                new OpenAI.OpenAIClientOptions { Endpoint = new Uri(ollamaEndpoint + "/v1"), NetworkTimeout = TimeSpan.FromMinutes(5) });
             return ollamaClient.GetChatClient(modelId).AsIChatClient();
         }
         if (!string.IsNullOrWhiteSpace(azureEndpoint))
@@ -752,7 +785,8 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
                 .AddOpenAIChatCompletion(
                     modelId: modelId,
                     apiKey: "ollama",
-                    endpoint: new Uri(ollamaEndpoint + "/v1"))
+                    endpoint: new Uri(ollamaEndpoint + "/v1"),
+                    httpClient: new HttpClient { Timeout = TimeSpan.FromMinutes(5) })
                 .Build();
         }
         return Kernel.CreateBuilder()

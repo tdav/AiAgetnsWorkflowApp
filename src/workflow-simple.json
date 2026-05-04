@@ -8,7 +8,9 @@
     "maxRoundCount": 5,
     "maxStallCount": 2,
     "maxResetCount": 1,
-    "enablePlanReview": false
+    "enablePlanReview": false,
+    "enableThinking": true,
+    "thinkingBudgetTokens": 2048
   },
 
   "agents": [
@@ -17,19 +19,24 @@
       "description": "Provides current UTC timestamp for report metadata",
       "instructions": "Use TimePlugin to get the current UTC time. Return only the timestamp.",
       "modelId": "bjoernb/gemma4-e2b-fast",
-      "plugins": ["TimePlugin"]
+      "plugins": ["TimePlugin"],
+      "enableThinking": false
     },
     {
       "name": "ResearchAgent",
       "description": "Finds and gathers information from various sources",
       "instructions": "Find reliable information on renewable energy adoption. Present clearly with citations where possible.",
-      "modelId": "bjoernb/gemma4-e2b-fast"
+      "modelId": "bjoernb/gemma4-e2b-fast",
+      "enableThinking": true,
+      "thinkingBudgetTokens": 4096
     },
     {
       "name": "AnalystAgent",
       "description": "Analyzes data and creates summaries",
       "instructions": "Analyze the gathered information and produce a concise, well-structured summary.",
-      "modelId": "bjoernb/gemma4-e2b-fast"
+      "modelId": "bjoernb/gemma4-e2b-fast",
+      "enableThinking": true,
+      "thinkingBudgetTokens": 2048
     }
   ],
 

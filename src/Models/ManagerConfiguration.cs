@@ -10,4 +10,6 @@ public class ManagerConfiguration
     public int MaxStallCount { get; set; } = 3;
     public int MaxResetCount { get; set; } = 2;
     public bool EnablePlanReview { get; set; } = false;
+    public bool EnableThinking { get; set; } = false;
+    public int ThinkingBudgetTokens { get; set; } = 1024;
 }

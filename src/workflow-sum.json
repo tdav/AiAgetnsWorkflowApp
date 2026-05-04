@@ -1,0 +1,47 @@
+{
+  "workflowType": "Magentic",
+
+  "task": "Запусти счётчик от 1 до 20. На каждом шаге CounterAgent называет следующее число, SummerAgent накапливает сумму. Как только текущее число достигнет 10 — остановись и выведи итоговую сумму чисел от 1 до 10.",
+
+  "manager": {
+    "modelId": "bjoernb/gemma4-e2b-fast",
+    "maxRoundCount": 30,
+    "maxStallCount": 3,
+    "maxResetCount": 1,
+    "enablePlanReview": false,
+    "enableThinking": false
+  },
+
+  "agents": [
+    {
+      "name": "CounterAgent",
+      "description": "Счётчик: генерирует числа по одному за шаг, начиная с 1",
+      "instructions": "Вы — счётчик. При каждом обращении называйте следующее число в последовательности (1, 2, 3 … 20). Передавайте это число агенту SummerAgent. Не делайте ничего другого — только называйте очередное число.",
+      "modelId": "bjoernb/gemma4-e2b-fast",
+      "enableThinking": false,
+      "tools": [],
+      "metadata": {
+        "priority": "high",
+        "specialization": "counting"
+      }
+    },
+    {
+      "name": "SummerAgent",
+      "description": "Суммирует все числа, полученные от CounterAgent",
+      "instructions": "Вы — накопитель суммы. Получайте число от CounterAgent, прибавляйте его к текущей сумме и сообщайте менеджеру актуальное значение суммы и последнее принятое число. Формат ответа: 'Текущее число: N, Накопленная сумма: S'.",
+      "modelId": "bjoernb/gemma4-e2b-fast",
+      "enableThinking": false,
+      "tools": [],
+      "metadata": {
+        "priority": "high",
+        "specialization": "summation"
+      }
+    }
+  ],
+
+  "settings": {
+    "timeoutSeconds": "600",
+    "retryAttempts": "2",
+    "environment": "production"
+  }
+}

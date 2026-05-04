@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-
 namespace MagenticWorkflowApp.Models;
 
 /// <summary>
@@ -15,4 +13,6 @@ public class AgentConfiguration
     public Dictionary<string, object> Metadata { get; set; } = new();
     public List<string> McpServers { get; set; } = new();
     public List<string> Plugins { get; set; } = new();
+    public bool EnableThinking { get; set; } = false;
+    public int ThinkingBudgetTokens { get; set; } = 1024;
 }
