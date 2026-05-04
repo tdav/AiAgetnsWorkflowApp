@@ -351,21 +351,27 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
                     agentConfig.Name, toolCount);
             }
 
-            var agentSettings = BuildExecutionSettings(agentConfig.EnableThinking, agentConfig.ThinkingBudgetTokens);
+            var instructions = agentConfig.EnableThinking
+                ? "<|think|>\n" + agentConfig.Instructions
+                : agentConfig.Instructions;
+
             skAgents.Add(new ChatCompletionAgent
             {
                 Name = agentConfig.Name,
                 Description = agentConfig.Description,
-                Instructions = agentConfig.Instructions,
+                Instructions = instructions,
                 Kernel = kernel,
-                Arguments = new KernelArguments(agentSettings),
             });
         }
 
         var managerKernel = BuildKernel(config.Manager.ModelId, openAiApiKey, ollamaEndpoint);
         var managerService = managerKernel.GetRequiredService<IChatCompletionService>();
 
-        var managerSettings = BuildExecutionSettings(config.Manager.EnableThinking, config.Manager.ThinkingBudgetTokens, responseFormat: "json_object");
+        if (config.Manager.EnableThinking)
+            logger.LogWarning(
+                "Manager enableThinking=true is not supported via StandardMagenticManager (internal prompts cannot be modified); thinking token will not be injected.");
+
+        var managerSettings = new OpenAIPromptExecutionSettings { ResponseFormat = "json_object" };
         var manager = new StandardMagenticManager(managerService, managerSettings)
         {
             MaximumInvocationCount = config.Manager.MaxRoundCount,
@@ -741,20 +747,6 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         return tools;
     }
 
-    private static OpenAIPromptExecutionSettings BuildExecutionSettings(
-        bool enableThinking, int thinkingBudgetTokens, string? responseFormat = null)
-    {
-        var settings = new OpenAIPromptExecutionSettings();
-        if (responseFormat is not null)
-            settings.ResponseFormat = responseFormat;
-        if (enableThinking)
-            settings.ExtensionData = new Dictionary<string, object>
-            {
-                ["think"] = true,
-                ["thinking_budget"] = thinkingBudgetTokens,
-            };
-        return settings;
-    }
 
     private static IChatClient BuildChatClient(
         string modelId, string? openAiApiKey, string? azureEndpoint, string? ollamaEndpoint = null)
