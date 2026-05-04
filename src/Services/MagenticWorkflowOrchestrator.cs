@@ -797,7 +797,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
                         : descriptor.ImplementationInstance is not null
                             ? (IChatCompletionService)descriptor.ImplementationInstance
                             : (IChatCompletionService)ActivatorUtilities.CreateInstance(sp, descriptor.ImplementationType!);
-                    return new LoggingChatCompletionService(inner, agentName, activity);
+                    return new LoggingChatCompletionService(inner, agentName, activity, stripReasoning: !enableThinking);
                 });
             }
         }
