@@ -5,6 +5,9 @@
 > 🎯 **4 типа оркестрации:** Sequential, Concurrent, Conditional, Magentic
 > 🔌 **Расширения:** MCP (Model Context Protocol) серверы и C# плагины как инструменты агентов
 
+## Модели
+https://docs.lm-kit.com/lm-kit-net/guides/model-catalog/model-catalog.html
+
 ## 🌟 Что это
 
 Универсальная платформа для создания и выполнения workflow с AI-агентами через **декларативную JSON-конфигурацию**. Агенты могут пользоваться инструментами:
