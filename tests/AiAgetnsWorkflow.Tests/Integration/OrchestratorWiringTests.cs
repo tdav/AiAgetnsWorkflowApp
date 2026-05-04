@@ -37,10 +37,12 @@ public class OrchestratorWiringTests
         var registry = new AgentPluginRegistry(Array.Empty<IAgentPlugin>());
         var cfg = new ConfigurationBuilder().Build();
 
+        var activity = Substitute.For<IAgentActivityLogger>();
+
         var sut = new MagenticWorkflowOrchestrator(
             NullLogger<MagenticWorkflowOrchestrator>.Instance,
             NullLoggerFactory.Instance,
-            loader, visualizer, cfg, pool, hosted, registry);
+            loader, visualizer, cfg, pool, hosted, registry, activity);
 
         var act = () => sut.ExecuteWorkflowFromJsonAsync("any.json");
         await act.Should().ThrowAsync<WorkflowValidationException>().WithMessage("*missing*");
@@ -64,10 +66,12 @@ public class OrchestratorWiringTests
         var registry = new AgentPluginRegistry(Array.Empty<IAgentPlugin>());
         var cfg = new ConfigurationBuilder().Build();   // no OpenAI:ApiKey, no AzureOpenAI:Endpoint
 
+        var activity = Substitute.For<IAgentActivityLogger>();
+
         var sut = new MagenticWorkflowOrchestrator(
             NullLogger<MagenticWorkflowOrchestrator>.Instance,
             NullLoggerFactory.Instance,
-            loader, visualizer, cfg, pool, hosted, registry);
+            loader, visualizer, cfg, pool, hosted, registry, activity);
 
         Func<Task> act = () => sut.ExecuteWorkflowFromJsonAsync("any.json");
         await act.Should().NotThrowAsync();
