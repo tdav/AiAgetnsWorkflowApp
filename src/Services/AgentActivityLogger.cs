@@ -89,22 +89,80 @@ public sealed class AgentActivityLogger : IAgentActivityLogger
     }
 
     public void OnToolCall(string agent, string toolName, string? args = null)
-        => SafeRun(() => { /* implemented in Task 8 */ });
+    {
+        SafeRun(() =>
+        {
+            console.WriteLineWithColor(
+                $"[{agent}] → tool: {toolName}({args ?? string.Empty})",
+                ConsoleColor.Magenta);
+            logger.LogInformation(
+                "Agent {Agent} called tool {Tool} with args {Args}",
+                agent, toolName, args ?? string.Empty);
+        });
+    }
 
     public void OnManagerDecision(string managerName, string decision)
-        => SafeRun(() => { /* implemented in Task 8 */ });
+    {
+        SafeRun(() =>
+        {
+            console.WriteLineWithColor(
+                $"[{managerName}] DECISION: {decision}",
+                ConsoleColor.Cyan);
+            logger.LogInformation(
+                "Manager {Manager} decision: {Decision}",
+                managerName, decision);
+        });
+    }
 
     public void OnExecutorFailed(string executorId, Exception exception)
-        => SafeRun(() => { /* implemented in Task 9 */ });
+    {
+        SafeRun(() =>
+        {
+            console.WriteLineWithColor($"[EXECUTOR:{executorId}] FAILED: {exception.Message}", ConsoleColor.Red);
+            logger.LogError(exception, "Executor {Executor} failed", executorId);
+            FlushAllPendingTurns("aborted");
+        });
+    }
 
     public void OnWorkflowError(Exception exception)
-        => SafeRun(() => { /* implemented in Task 9 */ });
+    {
+        SafeRun(() =>
+        {
+            console.WriteLineWithColor($"[WORKFLOW] ERROR: {exception.Message}", ConsoleColor.Red);
+            logger.LogError(exception, "Workflow error");
+            FlushAllPendingTurns("aborted");
+        });
+    }
 
     public void OnWorkflowOutput(string output)
-        => SafeRun(() => { /* implemented in Task 9 */ });
+    {
+        SafeRun(() =>
+        {
+            console.WriteLine(string.Empty);
+            console.WriteLineWithColor(new string('=', 60), ConsoleColor.Green);
+            console.WriteLineWithColor("FINAL RESULT:", ConsoleColor.Green);
+            console.WriteLineWithColor(new string('=', 60), ConsoleColor.Green);
+            console.WriteLine($"✅ {output}");
+            console.WriteLineWithColor(new string('=', 60), ConsoleColor.Green);
+            logger.LogInformation("Workflow output: {Output}", output);
+        });
+    }
 
     public void FlushAllPendingTurns(string reason)
-        => SafeRun(() => { /* implemented in Task 9 */ });
+    {
+        SafeRun(() =>
+        {
+            foreach (var key in turns.Keys.ToList())
+            {
+                if (turns.TryRemove(key, out var state))
+                {
+                    logger.LogWarning(
+                        "Pending turn for {Agent} flushed: reason={Reason}, chunks={Chunks}",
+                        key, reason, state.ChunkCount);
+                }
+            }
+        });
+    }
 
     private void SafeRun(Action action)
     {
