@@ -184,11 +184,60 @@ public class WorkflowVisualizer : IWorkflowVisualizer
             case "magentic":
                 GenerateMagenticDiagram(sb, configuration);
                 break;
+            case "deepresearch":
+                GenerateDeepResearchDiagram(sb, configuration);
+                break;
         }
-        
+
         sb.AppendLine("```");
-        
+
         return sb.ToString();
+    }
+
+    private void GenerateDeepResearchDiagram(StringBuilder sb, WorkflowConfiguration config)
+    {
+        var dr = config.DeepResearch;
+        var clarifier   = dr?.Clarifier?.Name   ?? "Clarifier";
+        var planner     = dr?.Planner?.Name     ?? "Planner";
+        var researcher  = dr?.Researcher?.Name  ?? "Researcher";
+        var critic      = dr?.Critic?.Name      ?? "Critic";
+        var synthesizer = dr?.Synthesizer?.Name ?? "Synthesizer";
+        var parallel    = Math.Max(1, dr?.MaxParallelResearchers ?? 4);
+
+        sb.AppendLine("    Start([User task])");
+        sb.AppendLine($"    Clarifier[{clarifier}<br/>interactive dialog]");
+        sb.AppendLine($"    Planner[{planner}<br/>sub-question plan]");
+        sb.AppendLine($"    FanOut{{Fan-out / N researchers}}");
+        for (int i = 1; i <= parallel; i++)
+        {
+            sb.AppendLine($"    R{i}[{researcher}-{i}<br/>web_search → finding]");
+        }
+        sb.AppendLine("    FanIn{{Aggregate findings}}");
+        sb.AppendLine($"    Critic[{critic}<br/>coverage 0..10]");
+        sb.AppendLine($"    Synthesizer[{synthesizer}<br/>markdown report]");
+        sb.AppendLine("    End([./reports/research-{id}.md])");
+
+        sb.AppendLine("    Start --> Clarifier");
+        sb.AppendLine("    Clarifier -->|READY: refined topic| Planner");
+        sb.AppendLine("    Planner --> FanOut");
+        for (int i = 1; i <= parallel; i++)
+        {
+            sb.AppendLine($"    FanOut -.->|sub-question| R{i}");
+            sb.AppendLine($"    R{i} -.-> FanIn");
+        }
+        sb.AppendLine("    FanIn --> Critic");
+        sb.AppendLine("    Critic -->|gaps| FanOut");
+        sb.AppendLine("    Critic -->|OK| Synthesizer");
+        sb.AppendLine("    Synthesizer --> End");
+
+        sb.AppendLine("    style Start fill:#9f9,stroke:#333,stroke-width:2px");
+        sb.AppendLine("    style End fill:#9f9,stroke:#333,stroke-width:2px");
+        sb.AppendLine("    style Clarifier fill:#fcf,stroke:#333");
+        sb.AppendLine("    style Planner fill:#9cf,stroke:#333");
+        sb.AppendLine("    style Critic fill:#fc9,stroke:#333");
+        sb.AppendLine("    style Synthesizer fill:#cf9,stroke:#333");
+        sb.AppendLine("    style FanOut fill:#ff9,stroke:#333,stroke-width:3px");
+        sb.AppendLine("    style FanIn fill:#ff9,stroke:#333,stroke-width:3px");
     }
 
     private void GenerateSequentialDiagram(StringBuilder sb, WorkflowConfiguration config)
