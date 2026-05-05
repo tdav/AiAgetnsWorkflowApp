@@ -141,8 +141,8 @@ public class WorkflowJsonLoader : IWorkflowJsonLoader
                 throw new WorkflowValidationException($"deepResearch role '{roleName}' must specify a modelId.");
         }
 
-        if (dr.MaxResearchIterations < 1 || dr.MaxResearchIterations > 10)
-            throw new WorkflowValidationException("deepResearch.maxResearchIterations must be in [1..10].");
+        if (dr.MaxResearchIterations < 1 || dr.MaxResearchIterations > 500)
+            throw new WorkflowValidationException("deepResearch.maxResearchIterations must be in [1..500].");
         if (dr.MaxParallelResearchers < 1 || dr.MaxParallelResearchers > 32)
             throw new WorkflowValidationException("deepResearch.maxParallelResearchers must be in [1..32].");
     }
