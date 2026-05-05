@@ -35,6 +35,13 @@
 		
 		<!-- Явное обновление для устранения уязвимости GHSA-g94r-2vxg-569j -->
 		<PackageReference Include="OpenTelemetry.Api" Version="1.15.3" />
+
+		<PackageReference Include="Serilog.Extensions.Hosting" Version="8.0.0" />
+		<PackageReference Include="Serilog.Settings.Configuration" Version="8.0.4" />
+		<PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
+		<PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
+		<PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.10.0" />
+		<PackageReference Include="OpenTelemetry.Exporter.Console" Version="1.10.0" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -75,6 +82,10 @@
 		<None Update="workflow-mixed.json">
 		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
+	</ItemGroup>
+	
+	<ItemGroup>
+	  <Folder Include="logs\" />
 	</ItemGroup>
 	
 

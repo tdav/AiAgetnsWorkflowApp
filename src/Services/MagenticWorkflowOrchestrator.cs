@@ -12,7 +12,11 @@ using Microsoft.SemanticKernel.Agents.Magentic;
 using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
+using Microsoft.Extensions.DependencyInjection;
 using OpenAI;
+using System.ClientModel.Primitives;
+using System.Linq;
+using System.Text.Json;
 
 namespace MagenticWorkflowApp.Services;
 
@@ -31,6 +35,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
     private readonly IMcpClientPool mcpPool;
     private readonly IHostedToolFactory hostedFactory;
     private readonly IAgentPluginRegistry pluginRegistry;
+    private readonly IAgentActivityLogger activity;
 
     public MagenticWorkflowOrchestrator(
         ILogger<MagenticWorkflowOrchestrator> logger,
@@ -40,7 +45,8 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         IConfiguration configuration,
         IMcpClientPool mcpPool,
         IHostedToolFactory hostedFactory,
-        IAgentPluginRegistry pluginRegistry)
+        IAgentPluginRegistry pluginRegistry,
+        IAgentActivityLogger activity)
     {
         this.logger = logger;
         this.loggerFactory = loggerFactory;
@@ -50,6 +56,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         this.mcpPool = mcpPool;
         this.hostedFactory = hostedFactory;
         this.pluginRegistry = pluginRegistry;
+        this.activity = activity;
     }
 
     public async Task ExecuteWorkflowFromJsonAsync(string jsonFilePath, CancellationToken cancellationToken = default)
@@ -135,6 +142,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         string? azureEndpoint,
         string? ollamaEndpoint = null)
     {
+        activity.SetWorkflowMode(WorkflowDisplayMode.Sequential);
         var agents = await CreateAgentsFromConfigurationAsync(
             config, openAiApiKey, azureEndpoint, ollamaEndpoint, default).ConfigureAwait(false);
 
@@ -205,6 +213,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         string? azureEndpoint,
         string? ollamaEndpoint = null)
     {
+        activity.SetWorkflowMode(WorkflowDisplayMode.Concurrent);
         var participantNames = config.Orchestration?.Concurrent?.ParticipantAgents;
         if (participantNames is null || participantNames.Count == 0)
             throw new WorkflowValidationException(
@@ -254,6 +263,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         string? azureEndpoint,
         string? ollamaEndpoint = null)
     {
+        activity.SetWorkflowMode(WorkflowDisplayMode.Sequential);
         var agents = await CreateAgentsFromConfigurationAsync(
             config, openAiApiKey, azureEndpoint, ollamaEndpoint, default).ConfigureAwait(false);
 
@@ -334,6 +344,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         string? azureEndpoint,
         string? ollamaEndpoint = null)
     {
+        activity.SetWorkflowMode(WorkflowDisplayMode.Sequential);
         if (string.IsNullOrWhiteSpace(openAiApiKey) && string.IsNullOrWhiteSpace(ollamaEndpoint))
             throw new WorkflowValidationException(
                 "Magentic workflow requires OpenAI API key or Ollama endpoint.");
@@ -341,7 +352,13 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         var skAgents = new List<ChatCompletionAgent>();
         foreach (var agentConfig in config.Agents)
         {
-            var kernel = BuildKernel(agentConfig.ModelId, openAiApiKey, ollamaEndpoint);
+            var kernel = BuildKernel(
+                agentConfig.ModelId,
+                openAiApiKey,
+                ollamaEndpoint,
+                agentConfig.EnableThinking,
+                agentName: agentConfig.Name,
+                activity: activity);
 
             var toolCount = agentConfig.Tools.Count + agentConfig.McpServers.Count + agentConfig.Plugins.Count;
             if (toolCount > 0)
@@ -351,21 +368,29 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
                     agentConfig.Name, toolCount);
             }
 
-            var agentSettings = BuildExecutionSettings(agentConfig.EnableThinking, agentConfig.ThinkingBudgetTokens);
+            var instructions = agentConfig.EnableThinking
+                ? "<|think|>\n" + agentConfig.Instructions
+                : agentConfig.Instructions;
+
             skAgents.Add(new ChatCompletionAgent
             {
                 Name = agentConfig.Name,
                 Description = agentConfig.Description,
-                Instructions = agentConfig.Instructions,
+                Instructions = instructions,
                 Kernel = kernel,
-                Arguments = new KernelArguments(agentSettings),
             });
         }
 
-        var managerKernel = BuildKernel(config.Manager.ModelId, openAiApiKey, ollamaEndpoint);
+        var managerKernel = BuildKernel(
+            config.Manager.ModelId,
+            openAiApiKey,
+            ollamaEndpoint,
+            config.Manager.EnableThinking,
+            agentName: LoggingChatCompletionService.ManagerAgentName,
+            activity: activity);
         var managerService = managerKernel.GetRequiredService<IChatCompletionService>();
 
-        var managerSettings = BuildExecutionSettings(config.Manager.EnableThinking, config.Manager.ThinkingBudgetTokens, responseFormat: "json_object");
+        var managerSettings = new OpenAIPromptExecutionSettings { ResponseFormat = "json_object" };
         var manager = new StandardMagenticManager(managerService, managerSettings)
         {
             MaximumInvocationCount = config.Manager.MaxRoundCount,
@@ -375,14 +400,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
 
         var orchestration = new MagenticOrchestration(manager, skAgents.ToArray())
         {
-            ResponseCallback = response =>
-            {
-                LogEvent(
-                    $"AGENT:{response.AuthorName ?? "?"}",
-                    response.Content ?? "(empty)",
-                    ConsoleColor.Yellow);
-                return ValueTask.CompletedTask;
-            },
+            ResponseCallback = _ => ValueTask.CompletedTask,
             LoggerFactory = loggerFactory,
         };
 
@@ -409,7 +427,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
                 .GetValueAsync(TimeSpan.FromMinutes(timeoutMinutes), default)
                 .ConfigureAwait(false);
 
-            ShowFinalResult(output ?? "(no output)");
+            activity.OnWorkflowOutput(output ?? "(no output)");
         }
         finally
         {
@@ -440,16 +458,14 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
 
     private async Task SimulateSequentialWorkflowAsync(WorkflowConfiguration config)
     {
-        LogEvent("WORKFLOW", $"Starting Sequential execution with {config.Agents.Count} agents", ConsoleColor.Cyan);
+        activity.SetWorkflowMode(WorkflowDisplayMode.Sequential);
 
+        LogEvent("WORKFLOW", $"Starting Sequential execution with {config.Agents.Count} agents", ConsoleColor.Cyan);
         if (config.Orchestration?.StartAgent != null)
-        {
             LogEvent("WORKFLOW", $"Start agent: {config.Orchestration.StartAgent}", ConsoleColor.Cyan);
-        }
 
         await Task.Delay(300);
 
-        // Process agents sequentially following edges
         var processedAgents = new HashSet<string>();
         var currentAgent = config.Orchestration?.StartAgent ?? config.Agents.First().Name;
 
@@ -457,18 +473,15 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         {
             var agent = config.Agents.FirstOrDefault(a => a.Name == currentAgent);
             if (agent == null) break;
-
             processedAgents.Add(currentAgent);
 
             await Task.Delay(400);
-            LogEvent($"AGENT:{agent.Name}", $"Processing using {agent.ModelId}...", ConsoleColor.Yellow);
+            activity.OnChunk(agent.Name, $"Processing using {agent.ModelId}...");
             await Task.Delay(600);
-            LogEvent($"AGENT:{agent.Name}", $"✓ Completed task: {agent.Description}", ConsoleColor.Green);
+            activity.OnTurnCompleted(agent.Name, $"✓ Completed task: {agent.Description}");
 
-            // Find next agent
             var edge = config.Orchestration?.Edges.FirstOrDefault(e => e.From == currentAgent);
             currentAgent = edge?.To;
-
             if (currentAgent != null)
             {
                 await Task.Delay(200);
@@ -477,53 +490,46 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         }
 
         await Task.Delay(300);
-        ShowFinalResult("Sequential pipeline completed successfully!");
+        activity.OnWorkflowOutput("Sequential pipeline completed successfully!");
     }
 
     private async Task SimulateConcurrentWorkflowAsync(WorkflowConfiguration config)
     {
+        activity.SetWorkflowMode(WorkflowDisplayMode.Concurrent);
+
         LogEvent("WORKFLOW", $"Starting Concurrent execution with {config.Agents.Count} agents", ConsoleColor.Cyan);
 
-        var participants = config.Orchestration?.Concurrent?.ParticipantAgents ??
-                          config.Agents.Select(a => a.Name).ToList();
-
+        var participants = config.Orchestration?.Concurrent?.ParticipantAgents
+            ?? config.Agents.Select(a => a.Name).ToList();
         LogEvent("WORKFLOW", $"Participants: {string.Join(", ", participants)}", ConsoleColor.Cyan);
         await Task.Delay(300);
 
-        // Simulate fan-out
         LogEvent("WORKFLOW", "⚡ Fan-out: Distributing task to all agents simultaneously", ConsoleColor.Magenta);
         await Task.Delay(400);
 
-        // Simulate parallel processing
         var tasks = new List<Task>();
         foreach (var agentName in participants)
         {
             var agent = config.Agents.FirstOrDefault(a => a.Name == agentName);
-            if (agent != null)
-            {
-                tasks.Add(SimulateAgentWorkAsync(agent));
-            }
+            if (agent != null) tasks.Add(SimulateAgentWorkAsync(agent));
         }
-
         await Task.WhenAll(tasks);
 
-        // Simulate fan-in
         await Task.Delay(300);
         var strategy = config.Orchestration?.Concurrent?.AggregationStrategy ?? "Collect";
         LogEvent("WORKFLOW", $"⚡ Fan-in: Aggregating results using '{strategy}' strategy", ConsoleColor.Magenta);
         await Task.Delay(400);
 
-        ShowFinalResult($"Concurrent execution completed! All {participants.Count} agents finished.");
+        activity.OnWorkflowOutput($"Concurrent execution completed! All {participants.Count} agents finished.");
     }
 
     private async Task SimulateConditionalWorkflowAsync(WorkflowConfiguration config)
     {
-        LogEvent("WORKFLOW", "Starting Conditional execution with dynamic routing", ConsoleColor.Cyan);
+        activity.SetWorkflowMode(WorkflowDisplayMode.Sequential);
 
+        LogEvent("WORKFLOW", "Starting Conditional execution with dynamic routing", ConsoleColor.Cyan);
         if (config.Orchestration?.StartAgent != null)
-        {
             LogEvent("WORKFLOW", $"Start agent: {config.Orchestration.StartAgent}", ConsoleColor.Cyan);
-        }
 
         await Task.Delay(300);
 
@@ -534,36 +540,28 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         {
             var agent = config.Agents.FirstOrDefault(a => a.Name == currentAgent);
             if (agent == null) break;
-
             processedAgents.Add(currentAgent);
 
             await Task.Delay(400);
-            LogEvent($"AGENT:{agent.Name}", $"Processing using {agent.ModelId}...", ConsoleColor.Yellow);
+            activity.OnChunk(agent.Name, $"Processing using {agent.ModelId}...");
             await Task.Delay(600);
-            LogEvent($"AGENT:{agent.Name}", $"✓ Completed: {agent.Description}", ConsoleColor.Green);
+            activity.OnTurnCompleted(agent.Name, $"✓ Completed: {agent.Description}");
 
-            // Check for conditional edges
             var conditionalEdge = config.Orchestration?.ConditionalEdges
                 .FirstOrDefault(ce => ce.From == currentAgent);
-
             if (conditionalEdge != null)
             {
                 await Task.Delay(300);
-                LogEvent("DECISION", $"Evaluating condition: {conditionalEdge.SelectionFunction}", ConsoleColor.Magenta);
-
-                // Simulate condition evaluation
-                var selectedTargets = conditionalEdge.ToOptions.Take(1).ToList(); // Simulate selecting one option
+                activity.OnManagerDecision("DECISION", $"Evaluating condition: {conditionalEdge.SelectionFunction}");
+                var selectedTargets = conditionalEdge.ToOptions.Take(1).ToList();
                 await Task.Delay(200);
-
-                LogEvent("DECISION", $"✓ Selected target(s): {string.Join(", ", selectedTargets)}", ConsoleColor.Green);
+                activity.OnManagerDecision("DECISION", $"✓ Selected target(s): {string.Join(", ", selectedTargets)}");
                 currentAgent = selectedTargets.FirstOrDefault();
             }
             else
             {
-                // Regular edge
                 var edge = config.Orchestration?.Edges.FirstOrDefault(e => e.From == currentAgent);
                 currentAgent = edge?.To;
-
                 if (currentAgent != null)
                 {
                     await Task.Delay(200);
@@ -573,45 +571,44 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         }
 
         await Task.Delay(300);
-        ShowFinalResult("Conditional workflow completed with dynamic routing!");
+        activity.OnWorkflowOutput("Conditional workflow completed with dynamic routing!");
     }
 
     private async Task SimulateMagenticWorkflowAsync(WorkflowConfiguration config)
     {
-        // Simulate orchestrator initialization
+        activity.SetWorkflowMode(WorkflowDisplayMode.Sequential);
+
         await Task.Delay(500);
         LogEvent("ORCHESTRATOR", "Initializing Magentic Manager...", ConsoleColor.Cyan);
         await Task.Delay(300);
-        LogEvent("ORCHESTRATOR", $"Creating execution plan for task: {config.Task.Substring(0, Math.Min(80, config.Task.Length))}...", ConsoleColor.Cyan);
+        LogEvent("ORCHESTRATOR",
+            $"Creating execution plan for task: {config.Task.Substring(0, Math.Min(80, config.Task.Length))}...",
+            ConsoleColor.Cyan);
 
-        // Simulate agent coordination
         for (int round = 1; round <= 3; round++)
         {
             Console.WriteLine($"\n--- Round {round} ---");
-
             foreach (var agent in config.Agents)
             {
                 await Task.Delay(400);
-                LogEvent($"AGENT:{agent.Name}", $"Executing task using {agent.ModelId}...", ConsoleColor.Yellow);
+                activity.OnChunk(agent.Name, $"Executing task using {agent.ModelId}...");
                 await Task.Delay(600);
-                LogEvent($"AGENT:{agent.Name}", $"[{agent.Description}] Completed subtask.", ConsoleColor.Yellow);
+                activity.OnTurnCompleted(agent.Name, $"[{agent.Description}] Completed subtask.");
             }
-
             await Task.Delay(300);
             LogEvent("ORCHESTRATOR", $"Reviewing progress from round {round}...", ConsoleColor.Cyan);
         }
 
-        // Simulate final result
         await Task.Delay(500);
-        ShowFinalResult($"Magentic orchestration completed! All {config.Agents.Count} agents collaborated successfully.");
+        activity.OnWorkflowOutput($"Magentic orchestration completed! All {config.Agents.Count} agents collaborated successfully.");
     }
 
     private async Task SimulateAgentWorkAsync(AgentConfiguration agent)
     {
         await Task.Delay(500);
-        LogEvent($"AGENT:{agent.Name}", $"[Concurrent] Processing using {agent.ModelId}...", ConsoleColor.Yellow);
-        await Task.Delay(Random.Shared.Next(800, 1500)); // Simulate variable processing time
-        LogEvent($"AGENT:{agent.Name}", $"[Concurrent] ✓ Completed: {agent.Description}", ConsoleColor.Green);
+        activity.OnChunk(agent.Name, $"[Concurrent] Processing using {agent.ModelId}...");
+        await Task.Delay(Random.Shared.Next(800, 1500));
+        activity.OnTurnCompleted(agent.Name, $"[Concurrent] ✓ Completed: {agent.Description}");
     }
 
     private void ShowFinalResult(string message)
@@ -642,41 +639,46 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         switch (evt)
         {
             case AgentResponseUpdateEvent a:
-                LogEvent(
-                    $"AGENT:{a.Update?.AuthorName ?? a.ExecutorId ?? "?"}",
-                    a.Update?.Text ?? string.Empty,
-                    ConsoleColor.Yellow);
-
-                LogEvent($"AGENT:{a.Update?.AuthorName ?? a.ExecutorId ?? "?"}", $"Data: {a.Data}", ConsoleColor.Yellow);
+                activity.OnChunk(
+                    a.Update?.AuthorName ?? a.ExecutorId ?? "?",
+                    a.Update?.Text ?? string.Empty);
                 return null;
 
             case AgentResponseEvent r:
-                LogEvent(
-                    $"AGENT:{r.ExecutorId ?? "?"}",
-                    r.Response?.Text ?? "(empty response)",
-                    ConsoleColor.Green);
+                var agentName = r.ExecutorId ?? "?";
+                activity.OnTurnCompleted(agentName, r.Response?.Text);
+                if (r.Response?.Messages is { } msgs)
+                {
+                    foreach (var m in msgs)
+                    {
+                        foreach (var c in m.Contents.OfType<Microsoft.Extensions.AI.FunctionCallContent>())
+                        {
+                            activity.OnToolCall(
+                                agentName,
+                                c.Name,
+                                c.Arguments is null ? null : System.Text.Json.JsonSerializer.Serialize(c.Arguments));
+                        }
+                    }
+                }
                 return null;
 
             case ExecutorFailedEvent ef:
                 var execEx = ef.Data as Exception
                     ?? new InvalidOperationException($"Executor '{ef.ExecutorId}' failed");
-                LogEvent($"EXECUTOR:{ef.ExecutorId ?? "?"}", execEx.Message, ConsoleColor.Red);
+                activity.OnExecutorFailed(ef.ExecutorId ?? "?", execEx);
                 return execEx;
 
             case WorkflowErrorEvent e:
                 var workflowEx = e.Exception ?? new InvalidOperationException("Unknown workflow error");
-                LogEvent("ERROR", workflowEx.Message, ConsoleColor.Red);
+                activity.OnWorkflowError(workflowEx);
                 return workflowEx;
 
             case WorkflowOutputEvent o:
-                ShowFinalResult(o.Data?.ToString() ?? "(no result)");
+                activity.OnWorkflowOutput(o.Data?.ToString() ?? "(no result)");
                 return null;
 
             default:
-                var dataText = evt.Data is not null
-                    ? $"{evt.GetType().Name} | Data: {evt.Data}"
-                    : evt.GetType().Name;
-                LogEvent("WORKFLOW", dataText, ConsoleColor.Cyan);
+                logger.LogDebug("Unhandled workflow event: {Type}", evt.GetType().Name);
                 return null;
         }
     }
@@ -701,11 +703,6 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
 
         foreach (var agentConfig in config.Agents)
         {
-            if (agentConfig.EnableThinking)
-                logger.LogWarning(
-                    "Agent '{Agent}': EnableThinking is supported only in Magentic workflow; ignored for {WorkflowType}",
-                    agentConfig.Name, config.WorkflowType);
-
             var hostedTools = hostedFactory.Create(agentConfig.Tools);
             var mcpTools = await mcpPool.GetToolsAsync(agentConfig.McpServers, ct).ConfigureAwait(false);
             var pluginTools = ResolvePluginTools(agentConfig);
@@ -716,7 +713,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
                 "Agent {Agent} resolved tools: hosted={H}, mcp={M}, plugins={P}",
                 agentConfig.Name, hostedTools.Count, mcpTools.Count, pluginTools.Count);
 
-            var chatClient = BuildChatClient(agentConfig.ModelId, openAiApiKey, azureEndpoint, ollamaEndpoint);
+            var chatClient = BuildChatClient(agentConfig.ModelId, openAiApiKey, azureEndpoint, ollamaEndpoint, agentConfig.EnableThinking);
             agents[agentConfig.Name] = chatClient.AsAIAgent(
                 instructions: agentConfig.Instructions,
                 name: agentConfig.Name,
@@ -741,30 +738,15 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         return tools;
     }
 
-    private static OpenAIPromptExecutionSettings BuildExecutionSettings(
-        bool enableThinking, int thinkingBudgetTokens, string? responseFormat = null)
-    {
-        var settings = new OpenAIPromptExecutionSettings();
-        if (responseFormat is not null)
-            settings.ResponseFormat = responseFormat;
-        if (enableThinking)
-            settings.ExtensionData = new Dictionary<string, object>
-            {
-                ["think"] = true,
-                ["thinking_budget"] = thinkingBudgetTokens,
-            };
-        return settings;
-    }
 
     private static IChatClient BuildChatClient(
-        string modelId, string? openAiApiKey, string? azureEndpoint, string? ollamaEndpoint = null)
+        string modelId, string? openAiApiKey, string? azureEndpoint, string? ollamaEndpoint = null, bool enableThinking = false)
     {
         if (!string.IsNullOrWhiteSpace(ollamaEndpoint))
         {
-            // Ollama предоставляет OpenAI-совместимый API
-            var ollamaClient = new OpenAIClient(
-                new System.ClientModel.ApiKeyCredential("ollama"),
-                new OpenAI.OpenAIClientOptions { Endpoint = new Uri(ollamaEndpoint + "/v1"), NetworkTimeout = TimeSpan.FromMinutes(5) });
+            var options = new OpenAI.OpenAIClientOptions { Endpoint = new Uri(ollamaEndpoint + "/v1"), NetworkTimeout = TimeSpan.FromMinutes(5) };
+            options.AddPolicy(new OllamaThinkingPolicy(enableThinking), PipelinePosition.PerCall);
+            var ollamaClient = new OpenAIClient(new System.ClientModel.ApiKeyCredential("ollama"), options);
             return ollamaClient.GetChatClient(modelId).AsIChatClient();
         }
         if (!string.IsNullOrWhiteSpace(azureEndpoint))
@@ -776,22 +758,51 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         return openAi.GetChatClient(modelId).AsIChatClient();
     }
 
-    private static Kernel BuildKernel(string modelId, string? openAiApiKey, string? ollamaEndpoint)
+    private static Kernel BuildKernel(
+        string modelId,
+        string? openAiApiKey,
+        string? ollamaEndpoint,
+        bool enableThinking = false,
+        string? agentName = null,
+        IAgentActivityLogger? activity = null)
     {
+        var builder = Kernel.CreateBuilder();
         if (!string.IsNullOrWhiteSpace(ollamaEndpoint))
         {
-            // Ollama: OpenAI-совместимый endpoint
-            return Kernel.CreateBuilder()
-                .AddOpenAIChatCompletion(
-                    modelId: modelId,
-                    apiKey: "ollama",
-                    endpoint: new Uri(ollamaEndpoint + "/v1"),
-                    httpClient: new HttpClient { Timeout = TimeSpan.FromMinutes(5) })
-                .Build();
+            var options = new OpenAI.OpenAIClientOptions
+            {
+                Endpoint = new Uri(ollamaEndpoint + "/v1"),
+                NetworkTimeout = TimeSpan.FromMinutes(5),
+            };
+            options.AddPolicy(new OllamaThinkingPolicy(enableThinking), PipelinePosition.PerCall);
+            var ollamaClient = new OpenAIClient(new System.ClientModel.ApiKeyCredential("ollama"), options);
+            builder.AddOpenAIChatCompletion(modelId, ollamaClient);
         }
-        return Kernel.CreateBuilder()
-            .AddOpenAIChatCompletion(modelId, openAiApiKey!)
-            .Build();
+        else
+        {
+            builder.AddOpenAIChatCompletion(modelId, openAiApiKey!);
+        }
+
+        if (agentName is not null && activity is not null)
+        {
+            var descriptor = builder.Services.LastOrDefault(d =>
+                d.ServiceType == typeof(IChatCompletionService));
+            if (descriptor is not null)
+            {
+                builder.Services.Remove(descriptor);
+                builder.Services.AddSingleton<IChatCompletionService>(sp =>
+                {
+                    IChatCompletionService inner = descriptor.ImplementationFactory is not null
+                        ? (IChatCompletionService)descriptor.ImplementationFactory(sp)
+                        : descriptor.ImplementationInstance is not null
+                            ? (IChatCompletionService)descriptor.ImplementationInstance
+                            : (IChatCompletionService)ActivatorUtilities.CreateInstance(sp, descriptor.ImplementationType!);
+                    return new LoggingChatCompletionService(inner, agentName, activity, stripReasoning: !enableThinking);
+                });
+            }
+        }
+
+        return builder.Build();
     }
 
     private void ValidatePluginReferences(WorkflowConfiguration config)
@@ -801,5 +812,42 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
                 if (!pluginRegistry.TryGet(name, out _))
                     throw new WorkflowValidationException(
                         $"Agent '{agent.Name}' references unknown plugin '{name}'");
+    }
+
+    private sealed class OllamaThinkingPolicy : PipelinePolicy
+    {
+        private readonly bool _think;
+
+        internal OllamaThinkingPolicy(bool think) => _think = think;
+
+        public override void Process(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int currentIndex)
+        {
+            InjectThink(message);
+            ProcessNext(message, pipeline, currentIndex);
+        }
+
+        public override async ValueTask ProcessAsync(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int currentIndex)
+        {
+            InjectThink(message);
+            await ProcessNextAsync(message, pipeline, currentIndex).ConfigureAwait(false);
+        }
+
+        private void InjectThink(PipelineMessage message)
+        {
+            if (message.Request?.Content is null) return;
+            using var ms = new MemoryStream();
+            message.Request.Content.WriteTo(ms, CancellationToken.None);
+            ms.Position = 0;
+            using var doc = JsonDocument.Parse(ms);
+            using var output = new MemoryStream();
+            using var writer = new Utf8JsonWriter(output);
+            writer.WriteStartObject();
+            foreach (var prop in doc.RootElement.EnumerateObject())
+                prop.WriteTo(writer);
+            writer.WriteBoolean("think", _think);
+            writer.WriteEndObject();
+            writer.Flush();
+            message.Request.Content = System.ClientModel.BinaryContent.Create(new BinaryData(output.ToArray()));
+        }
     }
 }
