@@ -64,11 +64,16 @@ public sealed class DeepResearchOrchestrator : IDeepResearchOrchestrator
             : dr.ResumeSessionId!;
         var sessionPath = Path.Combine(dr.SessionsDir, $"research-{sessionId}.json");
 
+        // Resolve per-role tools BEFORE building agents, so each role can declare its plugins in JSON.
+        // Clarifier gets web-search by default (so it can pre-scope the topic from the live web).
+        var clarifierTools = ResolvePluginTools(dr.Clarifier);
+        var researcherTools = ResolvePluginTools(dr.Researcher);
+
         // Build the four persistent role agents up-front. Researcher agents
         // are spawned ad-hoc per sub-question and don't share a session.
         var clarifier = _factory.BuildAgent(
             dr.Clarifier.Name, dr.Clarifier.Instructions, dr.Clarifier.ModelId,
-            tools: null, enableThinking: dr.Clarifier.EnableThinking);
+            tools: clarifierTools, enableThinking: dr.Clarifier.EnableThinking);
         var planner = _factory.BuildAgent(
             dr.Planner.Name, dr.Planner.Instructions, dr.Planner.ModelId,
             tools: null, enableThinking: dr.Planner.EnableThinking);
@@ -78,9 +83,6 @@ public sealed class DeepResearchOrchestrator : IDeepResearchOrchestrator
         var synthesizer = _factory.BuildAgent(
             dr.Synthesizer.Name, dr.Synthesizer.Instructions, dr.Synthesizer.ModelId,
             tools: null, enableThinking: dr.Synthesizer.EnableThinking);
-
-        // Resolve Researcher tools (Tavily plugin, optionally extra ones from agent.Plugins).
-        var researcherTools = ResolvePluginTools(dr.Researcher);
 
         var envelope = await LoadEnvelopeAsync(sessionPath, cancellationToken).ConfigureAwait(false);
 
@@ -94,9 +96,12 @@ public sealed class DeepResearchOrchestrator : IDeepResearchOrchestrator
         Console.WriteLine($"🔎 DeepResearch session: {sessionId}{(envelope is null ? " (new)" : " (resumed)")}");
         Console.ResetColor();
 
-        // 1. Clarifier — interactive dialog
+        // 0. Ask the user for a topic. Empty input falls back to the JSON 'task' value.
+        var startingTopic = await PromptForTopicAsync(config.Task, cancellationToken).ConfigureAwait(false);
+
+        // 1. Clarifier — interactive dialog (with optional web-search to pre-scope the topic)
         var refinedTopic = await RunClarifierLoopAsync(
-            clarifier, clarifierSession, config.Task, dr.MaxClarifierTurns, cancellationToken).ConfigureAwait(false);
+            clarifier, clarifierSession, startingTopic, dr.MaxClarifierTurns, cancellationToken).ConfigureAwait(false);
 
         // 2. Planner — produce a list of sub-questions
         var planItems = await RunPlannerAsync(planner, plannerSession, refinedTopic, cancellationToken).ConfigureAwait(false);
@@ -180,6 +185,33 @@ public sealed class DeepResearchOrchestrator : IDeepResearchOrchestrator
     // ──────────────────────────────────────────────────────────────────────
     // Stages
     // ──────────────────────────────────────────────────────────────────────
+
+    private async Task<string> PromptForTopicAsync(string fallbackTopic, CancellationToken ct)
+    {
+        Console.WriteLine();
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine("📝 Введите тему исследования и нажмите Enter.");
+        if (!string.IsNullOrWhiteSpace(fallbackTopic))
+        {
+            Console.WriteLine($"   (Enter без ввода → использовать тему из конфига: {fallbackTopic})");
+        }
+        Console.ResetColor();
+        Console.Write("topic> ");
+
+        var userInput = await ReadLineAsync(ct).ConfigureAwait(false);
+        var topic = string.IsNullOrWhiteSpace(userInput) ? fallbackTopic : userInput.Trim();
+
+        if (string.IsNullOrWhiteSpace(topic))
+        {
+            throw new WorkflowValidationException(
+                "DeepResearch requires a topic — both user input and JSON 'task' were empty.");
+        }
+
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"✓ Topic accepted: {topic}");
+        Console.ResetColor();
+        return topic;
+    }
 
     private async Task<string> RunClarifierLoopAsync(
         AIAgent clarifier, AgentSession session, string initialTask, int maxTurns, CancellationToken ct)
