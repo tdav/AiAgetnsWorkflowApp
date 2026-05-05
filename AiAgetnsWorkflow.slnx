@@ -3,6 +3,7 @@
     <Project Path="src/AiAgetnsWorkflow.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="AgentSession/AgentSession.csproj" Id="a0aa1e85-9798-43f0-9642-1a88f47d1ea9" />
     <Project Path="tests/AiAgetnsWorkflow.Tests/AiAgetnsWorkflow.Tests.csproj" />
     <Project Path="tests/FakeMcpServer/FakeMcpServer.csproj" />
   </Folder>
