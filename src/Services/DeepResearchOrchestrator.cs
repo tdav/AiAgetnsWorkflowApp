@@ -251,12 +251,15 @@ public sealed class DeepResearchOrchestrator : IDeepResearchOrchestrator
         _activity.OnTurnCompleted(planner.Name ?? "Planner", text);
 
         var items = TolerantParseList<ResearchPlanItem>(text);
+        // Normalize: LLMs sometimes omit fields, leaving SearchHints null even after deserialization.
+        items = items.Select(i => i with { SearchHints = i.SearchHints ?? new List<string>() }).ToList();
+
         if (items.Count == 0)
         {
             // Fallback: treat the refined topic as a single sub-question.
             items = new List<ResearchPlanItem>
             {
-                new ResearchPlanItem(refinedTopic, new List<string>())
+                new ResearchPlanItem { SubQuestion = refinedTopic }
             };
         }
 
@@ -302,8 +305,9 @@ public sealed class DeepResearchOrchestrator : IDeepResearchOrchestrator
                 _activity.OnTurnStarted(researcher.Name ?? "Researcher");
                 var session = await researcher.CreateSessionAsync(cancellationToken: token).ConfigureAwait(false);
 
-                var hints = item.SearchHints.Count > 0
-                    ? "\nHINTS: " + string.Join("; ", item.SearchHints)
+                var hintList = item.SearchHints ?? new List<string>();
+                var hints = hintList.Count > 0
+                    ? "\nHINTS: " + string.Join("; ", hintList)
                     : string.Empty;
 
                 var prompt =
@@ -466,10 +470,18 @@ public sealed class DeepResearchOrchestrator : IDeepResearchOrchestrator
             }
         }
 
-        // Tavily must always be available for Researcher.
-        if (!tools.Any() && _pluginRegistry.TryGet("TavilySearchPlugin", out var tavily))
+        // Fallback: if no search plugin was resolved from config, try Serper first, then Tavily,
+        // so the Researcher always has at least one web-search tool.
+        if (!tools.Any())
         {
-            tools.AddRange(tavily!.AsAITools());
+            if (_pluginRegistry.TryGet("SerperSearchPlugin", out var serper))
+            {
+                tools.AddRange(serper!.AsAITools());
+            }
+            else if (_pluginRegistry.TryGet("TavilySearchPlugin", out var tavily))
+            {
+                tools.AddRange(tavily!.AsAITools());
+            }
         }
         return tools;
     }
@@ -557,7 +569,10 @@ public sealed class DeepResearchOrchestrator : IDeepResearchOrchestrator
     private static List<ResearchPlanItem> ExtractGapItems(string text)
     {
         var items = TolerantParseList<ResearchPlanItem>(text);
-        return items.Where(i => !string.IsNullOrWhiteSpace(i.SubQuestion)).ToList();
+        return items
+            .Where(i => !string.IsNullOrWhiteSpace(i.SubQuestion))
+            .Select(i => i with { SearchHints = i.SearchHints ?? new List<string>() })
+            .ToList();
     }
 
     private static string Slug(string s)
