@@ -5,7 +5,7 @@
 		<TargetFramework>net10.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
-		<NoWarn>SKEXP0110;SKEXP0001;SKEXP0010</NoWarn>
+		<NoWarn>SKEXP0110;SKEXP0001;SKEXP0010;MEAI001</NoWarn>
 		<UserSecretsId>0dbb0e1c-636f-48d5-8b4e-e931d59f46dd</UserSecretsId>
 		<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
 	</PropertyGroup>
@@ -26,6 +26,8 @@
 		<PackageReference Include="Microsoft.SemanticKernel.Experimental.Agents" Version="1.18.1-alpha" />
 
 		<PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.7" />
+		<PackageReference Include="Microsoft.Extensions.Http" Version="10.0.7" />
+		<PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.7" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.7" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.7" />
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.7" />
@@ -80,6 +82,9 @@
 		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
 		<None Update="workflow-mixed.json">
+		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="workflow-deep-research.json">
 		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
 	</ItemGroup>

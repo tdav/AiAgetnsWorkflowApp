@@ -1,4 +1,5 @@
 using MagenticWorkflowApp.Interfaces;
+using MagenticWorkflowApp.Models;
 using MagenticWorkflowApp.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -110,5 +111,12 @@ internal static class Program
 
         services.AddSingleton<IAgentPlugin, Plugins.WeatherPlugin>();
         services.AddSingleton<IAgentPlugin, Plugins.TimePlugin>();
+
+        // DeepResearch wiring
+        services.Configure<TavilyConfiguration>(configuration.GetSection("Tavily"));
+        services.AddHttpClient("tavily");
+        services.AddSingleton<IAgentPlugin, Plugins.TavilySearchPlugin>();
+        services.AddSingleton<IAgentFactory, AgentFactory>();
+        services.AddSingleton<IDeepResearchOrchestrator, DeepResearchOrchestrator>();
     }
 }
