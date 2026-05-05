@@ -11,13 +11,13 @@ namespace MagenticWorkflowApp.Services;
 /// </summary>
 public class WorkflowJsonLoader : IWorkflowJsonLoader
 {
-    private readonly ILogger<WorkflowJsonLoader> _logger;
-    private readonly JsonSerializerOptions _jsonOptions;
+    private readonly ILogger<WorkflowJsonLoader> logger;
+    private readonly JsonSerializerOptions jsonOptions;
 
     public WorkflowJsonLoader(ILogger<WorkflowJsonLoader> logger)
     {
-        _logger = logger;
-        _jsonOptions = new JsonSerializerOptions
+        this.logger = logger;
+        jsonOptions = new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true,
             ReadCommentHandling = JsonCommentHandling.Skip,
@@ -30,7 +30,7 @@ public class WorkflowJsonLoader : IWorkflowJsonLoader
     {
         try
         {
-            _logger.LogInformation("Loading workflow configuration from: {FilePath}", jsonFilePath);
+            logger.LogInformation("Loading workflow configuration from: {FilePath}", jsonFilePath);
 
             if (!File.Exists(jsonFilePath))
             {
@@ -41,7 +41,7 @@ public class WorkflowJsonLoader : IWorkflowJsonLoader
             
             Console.WriteLine($"[JSON Loader] Configuration file loaded, size: {jsonContent.Length} bytes");
 
-            var configuration = JsonSerializer.Deserialize<WorkflowConfiguration>(jsonContent, _jsonOptions);
+            var configuration = JsonSerializer.Deserialize<WorkflowConfiguration>(jsonContent, jsonOptions);
 
             if (configuration == null)
             {
@@ -57,10 +57,10 @@ public class WorkflowJsonLoader : IWorkflowJsonLoader
             // Validate MCP server configurations and references
             ValidateMcpServers(configuration);
 
-            _logger.LogInformation("Configuration loaded successfully:");
-            _logger.LogInformation("  - Workflow Type: {Type}", configuration.WorkflowType);
-            _logger.LogInformation("  - Agents Count: {Count}", configuration.Agents.Count);
-            _logger.LogInformation("  - Task: {Task}", 
+            logger.LogInformation("Configuration loaded successfully:");
+            logger.LogInformation("  - Workflow Type: {Type}", configuration.WorkflowType);
+            logger.LogInformation("  - Agents Count: {Count}", configuration.Agents.Count);
+            logger.LogInformation("  - Task: {Task}", 
                 configuration.Task.Length > 100 
                     ? configuration.Task.Substring(0, 100) + "..." 
                     : configuration.Task);
@@ -69,7 +69,7 @@ public class WorkflowJsonLoader : IWorkflowJsonLoader
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error loading workflow configuration");
+            logger.LogError(ex, "Error loading workflow configuration");
             throw;
         }
     }
@@ -99,7 +99,7 @@ public class WorkflowJsonLoader : IWorkflowJsonLoader
             }
         }
 
-        _logger.LogInformation("Configuration validation passed");
+        logger.LogInformation("Configuration validation passed");
     }
 
     private static void ApplyEnvSubstitution(WorkflowConfiguration cfg)

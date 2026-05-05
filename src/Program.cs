@@ -24,21 +24,21 @@ internal static class Program
             .Build();
 
         Log.Logger = new LoggerConfiguration()
-            .ReadFrom.Configuration(configuration)
+            .ReadFrom.Configuration(configuration)            
             .CreateLogger();
 
-        var teeFileLogger = new LoggerConfiguration()
-            .MinimumLevel.Verbose()
-            .Enrich.FromLogContext()
-            .WriteTo.File(
-                path: "logs/agents-.log",
-                rollingInterval: Serilog.RollingInterval.Day,
-                outputTemplate: "{Timestamp:HH:mm:ss.fff} [{Level:u3}] [CON] {Message:lj}{NewLine}",
-                shared: true)
-            .CreateLogger();
+        //var teeFileLogger = new LoggerConfiguration()
+        //    .MinimumLevel.Verbose()
+        //    .Enrich.FromLogContext()
+        //    .WriteTo.File(
+        //        path: "logs/agents-.log",
+        //        rollingInterval: Serilog.RollingInterval.Day,
+        //        outputTemplate: "{Timestamp:HH:mm:ss.fff} [{Level:u3}] [CON] {Message:lj}{NewLine}",
+        //        shared: true)
+        //    .CreateLogger();
 
-        Console.SetOut(new SerilogTeeTextWriter(Console.Out, teeFileLogger));
-        Console.SetError(new SerilogTeeTextWriter(Console.Error, teeFileLogger, Serilog.Events.LogEventLevel.Warning));
+        //Console.SetOut(new SerilogTeeTextWriter(Console.Out, teeFileLogger));
+        //Console.SetError(new SerilogTeeTextWriter(Console.Error, teeFileLogger, Serilog.Events.LogEventLevel.Warning));
 
         try
         {
@@ -52,7 +52,7 @@ internal static class Program
             try
             {
                 var orchestrator = serviceProvider.GetRequiredService<IWorkflowOrchestrator>();
-                var path = args.Length > 0 ? args[0] : "workflow-sum.json";
+                var path = args.Length > 0 ? args[0] : "workflow-sequential.json";
                 Console.WriteLine($"Loading workflow configuration from: {path}\n");
                 await orchestrator.ExecuteWorkflowFromJsonAsync(path, cts.Token);
                 Console.WriteLine("\n=== Workflow Execution Completed ===");
@@ -74,7 +74,7 @@ internal static class Program
         }
         finally
         {
-            (teeFileLogger as IDisposable)?.Dispose();
+            //(teeFileLogger as IDisposable)?.Dispose();
             Log.CloseAndFlush();
         }
     }
