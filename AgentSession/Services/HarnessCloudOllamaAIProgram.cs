@@ -5,6 +5,8 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using OllamaSharp;
+using System.ComponentModel;
+using System.Text.Json;
 
 namespace AgentSession.Services;
 
@@ -24,12 +26,59 @@ internal class HarnessCloudOllamaProgram(IConfiguration config, ILogger<HarnessC
 
         logger.LogInformation("Ollama Cloud harness запущен. Endpoint={Endpoint} Model={Model}", cloudEndpoint, modelName);
 
-        OllamaApiClient CreateClient()
-        {
-            var http = new HttpClient { BaseAddress = new Uri(cloudEndpoint) };
-            http.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
-            return new OllamaApiClient(http, modelName);
-        }
+        using var http = new HttpClient { BaseAddress = new Uri(cloudEndpoint) };
+        http.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
+
+        OllamaApiClient CreateClient() => new(http, modelName);
+
+        // --- Инструмент: веб-поиск через Ollama Cloud /api/web_search ---
+        var webSearchTool = AIFunctionFactory.Create(
+            async (
+                [Description("Search query to find information on the web")] string query,
+                [Description("Maximum number of results to return (1-10)")] int maxResults = 5) =>
+            {
+                var body = JsonSerializer.Serialize(new { query, max_results = maxResults });
+                using var req = new HttpRequestMessage(HttpMethod.Post, "/api/web_search")
+                {
+                    Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
+                };
+                using var resp = await http.SendAsync(req).ConfigureAwait(false);
+                if (!resp.IsSuccessStatusCode)
+                    return $"web_search failed: HTTP {(int)resp.StatusCode}";
+
+                using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync().ConfigureAwait(false));
+                var results = doc.RootElement.GetProperty("results").EnumerateArray()
+                    .Select(r =>
+                        $"**{r.GetProperty("title").GetString()}**\n" +
+                        $"{r.GetProperty("url").GetString()}\n" +
+                        r.GetProperty("content").GetString())
+                    .ToList();
+
+                return results.Count == 0
+                    ? "Результаты не найдены."
+                    : string.Join("\n\n---\n\n", results);
+            },
+            name: "web_search",
+            description: "Search the web for current information using Ollama Cloud web search API.");
+
+        // --- Инструмент: загрузка содержимого URL через Ollama Cloud /api/web_fetch ---
+        var webFetchTool = AIFunctionFactory.Create(
+            async ([Description("URL to fetch content from")] string url) =>
+            {
+                var body = JsonSerializer.Serialize(new { url });
+                using var req = new HttpRequestMessage(HttpMethod.Post, "/api/web_fetch")
+                {
+                    Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
+                };
+                using var resp = await http.SendAsync(req).ConfigureAwait(false);
+                if (!resp.IsSuccessStatusCode)
+                    return $"web_fetch failed: HTTP {(int)resp.StatusCode}";
+
+                using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync().ConfigureAwait(false));
+                return doc.RootElement.GetProperty("content").GetString() ?? "Пустой ответ.";
+            },
+            name: "web_fetch",
+            description: "Fetch and read the content of a specific URL.");
 
         AIAgent webSearchAgent =
             ((IChatClient)CreateClient())
@@ -37,10 +86,15 @@ internal class HarnessCloudOllamaProgram(IConfiguration config, ILogger<HarnessC
                 new ChatClientAgentOptions
                 {
                     Name = "WebSearchAgent",
-                    Description = "An agent that can search the web to find information.",
+                    Description = "An agent that searches the web and fetches URLs using Ollama Cloud tools.",
                     ChatOptions = new ChatOptions
                     {
-                        Instructions = "You are a web search assistant. When asked to find information, return a concise, factual answer based on your knowledge.",
+                        Instructions =
+                            "You are a web research assistant. " +
+                            "Use the web_search tool to find information and web_fetch to read specific pages. " +
+                            "Return concise, factual answers with sources.",
+                        Tools = [webSearchTool, webFetchTool],
+                        MaxOutputTokens = 32_000,
                     },
                 });
 
