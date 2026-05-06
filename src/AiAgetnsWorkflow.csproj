@@ -6,7 +6,6 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<NoWarn>SKEXP0110;SKEXP0001;SKEXP0010</NoWarn>
-		<UserSecretsId>0dbb0e1c-636f-48d5-8b4e-e931d59f46dd</UserSecretsId>
 		<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
 	</PropertyGroup>
 
