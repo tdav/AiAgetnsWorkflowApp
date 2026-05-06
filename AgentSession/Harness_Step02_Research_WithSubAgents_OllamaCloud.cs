@@ -21,7 +21,7 @@ internal class HarnessGithubAIProgram
     public static async Task RunAsync(string[] args)
     {
         var githubCopilotEndpoint = new Uri("https://models.github.ai/inference");
-        var apiKey = "REMOVED_SECRET";
+        var apiKey = Environment.GetEnvironmentVariable("GITHUB_API_KEY") ?? throw new InvalidOperationException("GITHUB_API_KEY не задан");
         var modelName = "openai/gpt-5-mini";
 
 
