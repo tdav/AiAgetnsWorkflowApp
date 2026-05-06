@@ -1,4 +1,5 @@
 using MagenticWorkflowApp.Interfaces;
+using MagenticWorkflowApp.Models;
 using MagenticWorkflowApp.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -52,7 +53,7 @@ internal static class Program
             try
             {
                 var orchestrator = serviceProvider.GetRequiredService<IWorkflowOrchestrator>();
-                var path = args.Length > 0 ? args[0] : "workflow-sequential.json";
+                var path = args.Length > 0 ? args[0] : "workflow-deep-research.json";
                 Console.WriteLine($"Loading workflow configuration from: {path}\n");
                 await orchestrator.ExecuteWorkflowFromJsonAsync(path, cts.Token);
                 Console.WriteLine("\n=== Workflow Execution Completed ===");
@@ -110,5 +111,12 @@ internal static class Program
 
         services.AddSingleton<IAgentPlugin, Plugins.WeatherPlugin>();
         services.AddSingleton<IAgentPlugin, Plugins.TimePlugin>();
+
+        // DeepResearch wiring
+        services.Configure<SerperConfiguration>(configuration.GetSection("Serper"));
+        services.AddHttpClient("serper");
+        services.AddSingleton<IAgentPlugin, Plugins.SerperSearchPlugin>();
+        services.AddSingleton<IAgentFactory, AgentFactory>();
+        services.AddSingleton<IDeepResearchOrchestrator, DeepResearchOrchestrator>();
     }
 }

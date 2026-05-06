@@ -81,25 +81,70 @@ public class WorkflowJsonLoader : IWorkflowJsonLoader
             throw new InvalidOperationException("Task cannot be empty");
         }
 
-        if (configuration.Agents == null || configuration.Agents.Count == 0)
-        {
-            throw new InvalidOperationException("At least one agent must be configured");
-        }
+        var isDeepResearch = string.Equals(configuration.WorkflowType, "deepResearch", StringComparison.OrdinalIgnoreCase);
 
-        foreach (var agent in configuration.Agents)
+        if (isDeepResearch)
         {
-            if (string.IsNullOrWhiteSpace(agent.Name))
+            ValidateDeepResearchConfiguration(configuration);
+        }
+        else
+        {
+            if (configuration.Agents == null || configuration.Agents.Count == 0)
             {
-                throw new InvalidOperationException("Agent name cannot be empty");
+                throw new InvalidOperationException("At least one agent must be configured");
             }
 
-            if (string.IsNullOrWhiteSpace(agent.Description))
+            foreach (var agent in configuration.Agents)
             {
-                throw new InvalidOperationException($"Agent '{agent.Name}' must have a description");
+                if (string.IsNullOrWhiteSpace(agent.Name))
+                {
+                    throw new InvalidOperationException("Agent name cannot be empty");
+                }
+
+                if (string.IsNullOrWhiteSpace(agent.Description))
+                {
+                    throw new InvalidOperationException($"Agent '{agent.Name}' must have a description");
+                }
             }
         }
 
         logger.LogInformation("Configuration validation passed");
+    }
+
+    private static void ValidateDeepResearchConfiguration(WorkflowConfiguration configuration)
+    {
+        if (configuration.DeepResearch is null)
+        {
+            throw new WorkflowValidationException(
+                "deepResearch workflow requires a 'deepResearch' configuration section.");
+        }
+
+        var dr = configuration.DeepResearch;
+        var roles = new (string RoleName, AgentConfiguration Cfg)[]
+        {
+            ("Clarifier",   dr.Clarifier),
+            ("Planner",     dr.Planner),
+            ("Researcher",  dr.Researcher),
+            ("Critic",      dr.Critic),
+            ("Synthesizer", dr.Synthesizer),
+        };
+
+        foreach (var (roleName, cfg) in roles)
+        {
+            if (cfg is null)
+                throw new WorkflowValidationException($"deepResearch.{char.ToLower(roleName[0]) + roleName[1..]} is required.");
+            if (string.IsNullOrWhiteSpace(cfg.Name))
+                throw new WorkflowValidationException($"deepResearch role '{roleName}' must have a name.");
+            if (string.IsNullOrWhiteSpace(cfg.Instructions))
+                throw new WorkflowValidationException($"deepResearch role '{roleName}' must have instructions.");
+            if (string.IsNullOrWhiteSpace(cfg.ModelId))
+                throw new WorkflowValidationException($"deepResearch role '{roleName}' must specify a modelId.");
+        }
+
+        if (dr.MaxResearchIterations < 1 || dr.MaxResearchIterations > 500)
+            throw new WorkflowValidationException("deepResearch.maxResearchIterations must be in [1..500].");
+        if (dr.MaxParallelResearchers < 1 || dr.MaxParallelResearchers > 32)
+            throw new WorkflowValidationException("deepResearch.maxParallelResearchers must be in [1..32].");
     }
 
     private static void ApplyEnvSubstitution(WorkflowConfiguration cfg)

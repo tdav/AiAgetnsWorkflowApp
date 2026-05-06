@@ -36,6 +36,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
     private readonly IHostedToolFactory hostedFactory;
     private readonly IAgentPluginRegistry pluginRegistry;
     private readonly IAgentActivityLogger activity;
+    private readonly IDeepResearchOrchestrator deepResearch;
 
     public MagenticWorkflowOrchestrator(
         ILogger<MagenticWorkflowOrchestrator> logger,
@@ -46,7 +47,8 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         IMcpClientPool mcpPool,
         IHostedToolFactory hostedFactory,
         IAgentPluginRegistry pluginRegistry,
-        IAgentActivityLogger activity)
+        IAgentActivityLogger activity,
+        IDeepResearchOrchestrator deepResearch)
     {
         this.logger = logger;
         this.loggerFactory = loggerFactory;
@@ -57,6 +59,7 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
         this.hostedFactory = hostedFactory;
         this.pluginRegistry = pluginRegistry;
         this.activity = activity;
+        this.deepResearch = deepResearch;
     }
 
     public async Task ExecuteWorkflowFromJsonAsync(string jsonFilePath, CancellationToken cancellationToken = default)
@@ -130,6 +133,9 @@ public class MagenticWorkflowOrchestrator : IWorkflowOrchestrator
                 break;
             case "magentic":
                 await ExecuteMagenticWorkflowAsync(config, openAiApiKey, azureEndpoint, ollamaEndpoint);
+                break;
+            case "deepresearch":
+                await deepResearch.ExecuteAsync(config).ConfigureAwait(false);
                 break;
             default:
                 throw new NotSupportedException($"Workflow type '{config.WorkflowType}' is not supported");
