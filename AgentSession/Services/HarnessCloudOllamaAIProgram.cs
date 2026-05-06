@@ -1,35 +1,38 @@
 #pragma warning disable MAAI001
 
-using System.ClientModel;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
-using OpenAI;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using OllamaSharp;
+
+namespace AgentSession.Services;
 
 /// <summary>
-/// Демо SubAgents через Anthropic Claude API (OpenAI-совместимый endpoint).
-/// Требуется переменная окружения ANTHROPIC_API_KEY.
-/// Опционально: ANTHROPIC_MODEL (по умолчанию claude-opus-4-5).
+/// Демо SubAgents через Ollama Cloud (OllamaSharp).
+/// Секреты: OllamaCloud:ApiKey (dotnet user-secrets set "OllamaCloud:ApiKey" "ваш_ключ").
+/// Настройки: OllamaCloud:Endpoint, OllamaCloud:Model (appsettings.json).
 /// </summary>
-internal class HarnessClaudeProgram
+internal class HarnessCloudOllamaProgram(IConfiguration config, ILogger<HarnessCloudOllamaProgram> logger) : IHarness
 {
-    public static async Task RunAsync(string[] args)
+    public async Task RunAsync(CancellationToken cancellationToken = default)
     {
-        // Anthropic поддерживает OpenAI-совместимый endpoint — новых пакетов не требуется.
-        var anthropicEndpoint = new Uri("https://api.anthropic.com/v1");
-        var apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")
-            ?? throw new InvalidOperationException(
-                "Переменная окружения ANTHROPIC_API_KEY не задана. " +
-                "Получить ключ: https://console.anthropic.com/");
-        var modelName = Environment.GetEnvironmentVariable("ANTHROPIC_MODEL") ?? "claude-opus-4-5";
+        var apiKey = config["OllamaCloud:ApiKey"]
+            ?? throw new InvalidOperationException("OllamaCloud:ApiKey не задан. Выполните: dotnet user-secrets set \"OllamaCloud:ApiKey\" \"<ваш_ключ>\"");
+        var cloudEndpoint = config["OllamaCloud:Endpoint"] ?? "https://ollama.com";
+        var modelName = config["OllamaCloud:Model"] ?? "gpt-oss:120b";
 
-        var clientOptions = new OpenAIClientOptions { Endpoint = anthropicEndpoint };
+        logger.LogInformation("Ollama Cloud harness запущен. Endpoint={Endpoint} Model={Model}", cloudEndpoint, modelName);
 
-        // --- Sub-agent: Web Search Agent ---
-        // Делегирует поиск информации; отвечает на основе знаний модели.
+        OllamaApiClient CreateClient()
+        {
+            var http = new HttpClient { BaseAddress = new Uri(cloudEndpoint) };
+            http.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
+            return new OllamaApiClient(http, modelName);
+        }
+
         AIAgent webSearchAgent =
-            new OpenAIClient(new ApiKeyCredential(apiKey), clientOptions)
-            .GetChatClient(modelName)
-            .AsIChatClient()
+            ((IChatClient)CreateClient())
             .AsAIAgent(
                 new ChatClientAgentOptions
                 {
@@ -37,9 +40,7 @@ internal class HarnessClaudeProgram
                     Description = "An agent that can search the web to find information.",
                     ChatOptions = new ChatOptions
                     {
-                        Instructions =
-                            "You are a web search assistant. " +
-                            "When asked to find information, return a concise, factual answer based on your knowledge.",
+                        Instructions = "You are a web search assistant. When asked to find information, return a concise, factual answer based on your knowledge.",
                     },
                 });
 
@@ -61,14 +62,12 @@ internal class HarnessClaudeProgram
     ## Важно
 
     - Всегда делегируй веб-поиск вспомогательному агенту WebSearchAgent. Не отвечай по памяти.
-    - Если подзадача завершилась с ошибкой или вернула неясный результат, повтори с более конкретным запросом.
+    - Если подзадача завершилась с ошибкой или вернула неясный результат, продолжи задачу с более конкретным запросом.
     - Представляй результаты в виде аккуратной таблицы в формате Markdown.
     """;
 
         AIAgent parentAgent =
-            new OpenAIClient(new ApiKeyCredential(apiKey), clientOptions)
-            .GetChatClient(modelName)
-            .AsIChatClient()
+            ((IChatClient)CreateClient())
             .AsAIAgent(
                 new ChatClientAgentOptions
                 {
@@ -78,29 +77,27 @@ internal class HarnessClaudeProgram
                     {
                         Instructions = parentInstructions,
                         MaxOutputTokens = 16_000,
-                        // Sub-agent регистрируется как инструмент через AsAIFunction
                         Tools = [webSearchAgent.AsAIFunction()],
                     },
                 });
 
-        // Интерактивный консольный цикл
         Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine("=== Stock Price Researcher (SubAgents Demo — Anthropic Claude) ===");
+        Console.WriteLine("=== Stock Price Researcher (SubAgents Demo — Ollama Cloud) ===");
         Console.ResetColor();
         Console.Write("Enter a list of stock tickers (e.g., BAC, MSFT, BA): ");
         var userInput = Console.ReadLine();
 
-        if (!string.IsNullOrWhiteSpace(userInput))
-        {
-            Console.WriteLine();
-            var session = await parentAgent.CreateSessionAsync();
-            var messages = new List<ChatMessage> { new(ChatRole.User, userInput) };
+        if (string.IsNullOrWhiteSpace(userInput))
+            return;
 
-            await foreach (var update in parentAgent.RunStreamingAsync(messages, session))
-            {
-                Console.Write(update.Text);
-            }
-            Console.WriteLine();
+        Console.WriteLine();
+        var session = await parentAgent.CreateSessionAsync(cancellationToken);
+        var messages = new List<ChatMessage> { new(ChatRole.User, userInput) };
+
+        await foreach (var update in parentAgent.RunStreamingAsync(messages, session).WithCancellation(cancellationToken))
+        {
+            Console.Write(update.Text);
         }
+        Console.WriteLine();
     }
 }

@@ -2,42 +2,40 @@
 
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using OpenAI;
-using OpenAI.Chat;
 using OpenTelemetry;
 using OpenTelemetry.Trace;
 using System.ClientModel;
 using System.ComponentModel;
 using System.Text.Json;
 
+namespace AgentSession.Services;
+
 /// <summary>
-/// Демо SubAgents через GitHub Copilot API (https://api.githubcopilot.com).
-/// Требуется переменная окружения GITHUB_TOKEN (GitHub PAT с доступом к Copilot).
-/// Опционально: GITHUB_COPILOT_MODEL (по умолчанию gpt-4.1).
-/// Документация по моделям: https://docs.github.com/ru/copilot/reference/ai-models/supported-models
+/// Демо SubAgents через GitHub Models API.
+/// Секреты: GitHub:Token (dotnet user-secrets set "GitHub:Token" "ваш_токен").
+/// Настройки: GitHub:Endpoint, GitHub:Model (appsettings.json).
 /// </summary>
-internal class HarnessGithubAIProgram
+internal class HarnessGithubAIProgram(IConfiguration config, ILogger<HarnessGithubAIProgram> logger) : IHarness
 {
-    public static async Task RunAsync(string[] args)
+    public async Task RunAsync(CancellationToken cancellationToken = default)
     {
-        var githubCopilotEndpoint = new Uri("https://models.github.ai/inference");
-        var apiKey = Environment.GetEnvironmentVariable("GITHUB_TOKEN")
-            ?? throw new InvalidOperationException("Переменная окружения GITHUB_TOKEN не задана.");
-        var modelName = "openai/gpt-5-mini";
+        var endpoint = new Uri(config["GitHub:Endpoint"] ?? "https://models.github.ai/inference");
+        var apiKey = config["GitHub:Token"]
+            ?? throw new InvalidOperationException("GitHub:Token не задан. Выполните: dotnet user-secrets set \"GitHub:Token\" \"<ваш_токен>\"");
+        var modelName = config["GitHub:Model"] ?? "openai/gpt-4.1-mini";
+
+        logger.LogInformation("GitHub harness запущен. Endpoint={Endpoint} Model={Model}", endpoint, modelName);
 
         using var traceProvider = Sdk.CreateTracerProviderBuilder()
-                    .AddSource("agent-telemetry-source")
-                    .AddConsoleExporter()
-                    .Build();
+            .AddSource("agent-telemetry-source")
+            .AddConsoleExporter()
+            .Build();
 
+        var clientOptions = new OpenAIClientOptions { Endpoint = endpoint };
 
-        var clientOptions = new OpenAIClientOptions
-        {
-            Endpoint = githubCopilotEndpoint,
-        };
-
-        // --- Sub-agent: Web Search Agent ---
-        // Использует реальный инструмент GetStockClosingPrice для получения цен закрытия через Yahoo Finance.
         var stockTool = AIFunctionFactory.Create(StockPriceTools.GetStockClosingPriceAsync);
 
         AIAgent webSearchAgent =
@@ -58,13 +56,9 @@ internal class HarnessGithubAIProgram
                         Tools = [stockTool],
                     },
                 })
-              .AsBuilder()
-                    .UseOpenTelemetry(sourceName: "agent-telemetry-source")
-                    .Build();
-
-
-         
-
+            .AsBuilder()
+                .UseOpenTelemetry(sourceName: "agent-telemetry-source")
+                .Build();
 
         var parentInstructions =
             """
@@ -101,41 +95,33 @@ internal class HarnessGithubAIProgram
                     {
                         Instructions = parentInstructions,
                         MaxOutputTokens = 16_000,
-                        // Sub-agent регистрируется как инструмент через AsAIFunction
                         Tools = [webSearchAgent.AsAIFunction()],
                     },
                 })
-              .AsBuilder()
-                    .UseOpenTelemetry(sourceName: "agent-telemetry-source")
-                    .Build();
+            .AsBuilder()
+                .UseOpenTelemetry(sourceName: "agent-telemetry-source")
+                .Build();
 
-        // Интерактивный консольный цикл
         Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine("=== Stock Price Researcher (SubAgents Demo — GitHub Copilot API) ===");
+        Console.WriteLine("=== Stock Price Researcher (SubAgents Demo — GitHub Models API) ===");
         Console.ResetColor();
         Console.Write("Enter a list of stock tickers (e.g., BAC, MSFT, BA): ");
-        //var userInput = Console.ReadLine();
-        var userInput = "MSFT";
+        var userInput = Console.ReadLine();
 
-        if (!string.IsNullOrWhiteSpace(userInput))
+        if (string.IsNullOrWhiteSpace(userInput))
+            return;
+
+        Console.WriteLine();
+        var session = await parentAgent.CreateSessionAsync(cancellationToken);
+        var messages = new List<ChatMessage> { new(ChatRole.User, userInput) };
+
+        var runOptions = new AgentRunOptions { AllowBackgroundResponses = true };
+
+        await foreach (var update in parentAgent.RunStreamingAsync(messages, session, runOptions).WithCancellation(cancellationToken))
         {
-            Console.WriteLine();
-            var session = await parentAgent.CreateSessionAsync();
-            var messages = new List<Microsoft.Extensions.AI.ChatMessage> { new(ChatRole.User, userInput) };
-
-            AgentRunOptions runOptions = new AgentRunOptions
-            {
-                // Включаем потоковую передачу для получения промежуточных результатов по мере их готовности
-               AllowBackgroundResponses= true,
-                
-            };
-
-            await foreach (var update in parentAgent.RunStreamingAsync(messages, session, runOptions))
-            {
-                Console.Write(update.Text);
-            }
-            Console.WriteLine();
+            Console.Write(update.Text);
         }
+        Console.WriteLine();
     }
 }
 
@@ -144,11 +130,8 @@ internal class HarnessGithubAIProgram
 /// </summary>
 internal static class StockPriceTools
 {
-    private static readonly HttpClient _http = new();
+    private static readonly HttpClient Http = new();
 
-    /// <summary>
-    /// Возвращает цену закрытия акции для заданного тикера и даты (формат YYYY-MM-DD).
-    /// </summary>
     [Description("Get the closing price of a stock for a specific date. Date must be in YYYY-MM-DD format.")]
     public static async Task<string> GetStockClosingPriceAsync(
         [Description("Stock ticker symbol, e.g. MSFT, AAPL")] string ticker,
@@ -159,7 +142,6 @@ internal static class StockPriceTools
             if (!DateTimeOffset.TryParse(date, out var targetDate))
                 return $"Неверный формат даты: {date}. Используйте YYYY-MM-DD.";
 
-            // Yahoo Finance: period1/period2 — unix timestamps диапазона ±3 дня для учёта выходных
             var from = targetDate.AddDays(-5).ToUnixTimeSeconds();
             var to   = targetDate.AddDays(1).ToUnixTimeSeconds();
 
@@ -167,10 +149,9 @@ internal static class StockPriceTools
                       $"?period1={from}&period2={to}&interval=1d";
 
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
-            // Yahoo Finance требует User-Agent
             request.Headers.Add("User-Agent", "Mozilla/5.0");
 
-            using var response = await _http.SendAsync(request).ConfigureAwait(false);
+            using var response = await Http.SendAsync(request).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
                 return $"Ошибка запроса к Yahoo Finance для {ticker}: HTTP {(int)response.StatusCode}";
 
@@ -192,7 +173,6 @@ internal static class StockPriceTools
                 .Select(v => v.ValueKind == JsonValueKind.Null ? (double?)null : v.GetDouble())
                 .ToList();
 
-            // Ищем ближайшую дату ≤ targetDate
             int bestIdx = -1;
             for (int i = timestamps.Count - 1; i >= 0; i--)
             {
