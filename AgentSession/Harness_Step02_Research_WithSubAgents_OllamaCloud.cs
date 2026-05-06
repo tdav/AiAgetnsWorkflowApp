@@ -21,7 +21,8 @@ internal class HarnessGithubAIProgram
     public static async Task RunAsync(string[] args)
     {
         var githubCopilotEndpoint = new Uri("https://models.github.ai/inference");
-        var apiKey = "XQ3HOm20yWlkezdggB5m04lJXC4ENRKGRFoSw7N4";
+        var apiKey = Environment.GetEnvironmentVariable("GITHUB_TOKEN")
+            ?? throw new InvalidOperationException("Переменная окружения GITHUB_TOKEN не задана.");
         var modelName = "openai/gpt-5-mini";
 
         using var traceProvider = Sdk.CreateTracerProviderBuilder()
