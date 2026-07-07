@@ -102,6 +102,8 @@ internal static class Program
 
         // LLM clients and workflow executors (strategy per workflowType)
         services.AddSingleton<IChatClientProvider, ChatClientProvider>();
+        services.AddSingleton<ISelectionFunction, KeywordSelectionFunction>();
+        services.AddSingleton<ISelectionFunctionRegistry, SelectionFunctionRegistry>();
         services.AddSingleton<Services.Executors.AgentTeamBuilder>();
         services.AddSingleton<Services.Executors.SimulatedWorkflowExecutor>();
         services.AddSingleton<IWorkflowExecutor, Services.Executors.SequentialWorkflowExecutor>();

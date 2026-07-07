@@ -680,7 +680,7 @@ public sealed class DeepResearchOrchestrator : IDeepResearchOrchestrator
         for (var i = findings.Count - 1; i >= 0; i--)
         {
             var cost = TokenEstimator.Estimate(
-                JsonSerializer.Serialize(findings[i], EnvelopeJsonOptions), budget.CharsPerToken);
+                JsonSerializer.Serialize(findings[i], EnvelopeJsonOptions), budget);
             if (selected.Count > 0 && used + cost > limit)
             {
                 omitted.Add(findings[i]);

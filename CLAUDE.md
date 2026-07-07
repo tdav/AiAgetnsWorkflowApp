@@ -8,7 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Сборка
 dotnet build src/
 
-# Запуск (файл workflow по умолчанию: workflow-config.json)
+# Тесты (TUnit 1.58 на Microsoft.Testing.Platform; runner задан в global.json в корне репозитория)
+dotnet test
+
+# Запуск (файл по умолчанию — WorkflowSettings:DefaultConfigPath из appsettings.json,
+# сейчас workflow-deep-research.json)
 dotnet run --project src/
 
 # Запуск с конкретным workflow
@@ -35,30 +39,49 @@ dotnet user-secrets set "OpenAI:ApiKey" "ваш_ключ" --project src/
 ### Слои
 
 ```
-Interfaces/          — IWorkflowOrchestrator, IWorkflowJsonLoader, IWorkflowVisualizer
+Interfaces/          — IWorkflowOrchestrator, IWorkflowJsonLoader, IWorkflowVisualizer,
+                       IWorkflowExecutor, IChatClientProvider, IAgentFactory, ISelectionFunction
 Models/              — WorkflowConfiguration (корень), AgentConfiguration,
                        OrchestrationConfiguration, ManagerConfiguration,
-                       EdgeConfiguration, ConditionalEdgeConfiguration, ConcurrentConfiguration
+                       EdgeConfiguration, ConditionalEdgeConfiguration, ConcurrentConfiguration,
+                       ContextBudgetConfiguration
 Services/
   WorkflowJsonLoader.cs          — десериализация JSON + валидация
   WorkflowVisualizer.cs          — генерация Mermaid-диаграмм в консоль
-  MagenticWorkflowOrchestrator.cs — главный оркестратор, switch по workflowType
+  MagenticWorkflowOrchestrator.cs — тонкий фасад: load → visualize → dispatch к стратегии
+  ChatClientProvider.cs          — выбор провайдера (OpenAI/Ollama; Azure → NotSupportedException),
+                                   каждый IChatClient оборачивается в TokenTrimmingChatClient
+  TokenTrimmingChatClient.cs     — middleware бюджета токенов (contextBudget)
+  TokenEstimator.cs              — tiktoken (cl100k_base) или chars-эвристика
+  AgentFactory.cs                — IAgentFactory.BuildAgent(config, tools?, nameOverride?, historyWindowOverride?)
+  SelectionFunctionRegistry.cs   — резолв ISelectionFunction по имени (case-insensitive)
+  KeywordSelectionFunction.cs    — встроенный fallback keywordMatch
+  Executors/                     — стратегии IWorkflowExecutor (Name, CanExecute, ExecuteAsync):
+    SequentialWorkflowExecutor.cs   — sequential И conditional
+    ConcurrentWorkflowExecutor.cs
+    MagenticWorkflowExecutor.cs
+    DeepResearchWorkflowExecutor.cs
+    SimulatedWorkflowExecutor.cs    — демо-режим без учётных данных
+    AgentTeamBuilder.cs             — общий сборщик: hosted/MCP/plugin-инструменты + event stream
 ```
 
 ### Поток выполнения
 
 1. `WorkflowJsonLoader` читает и валидирует JSON-файл → `WorkflowConfiguration`
 2. `WorkflowVisualizer` рисует Mermaid-диаграмму в консоль
-3. `MagenticWorkflowOrchestrator` выбирает стратегию по `config.WorkflowType`:
-   - `sequential` → pipeline A→B→C через `edges`
+3. `MagenticWorkflowOrchestrator` (фасад): валидация плагинов → регистрация MCP → применение `contextBudget` → диспетчеризация в первый `IWorkflowExecutor`, чей `CanExecute(workflowType)` вернул true:
+   - `sequential` / `conditional` → `SequentialWorkflowExecutor`; conditional маршрутизируется динамически через `selectionFunction` (fallback — `keywordMatch`)
    - `concurrent` → fan-out/fan-in через `concurrent.participantAgents`
-   - `conditional` → маршрутизация через `conditionalEdges`
-   - `magentic` → менеджер динамически координирует агентов
+   - `magentic` → менеджер SK координирует агентов; MCP/plugin-инструменты бриджатся в Kernel (`AsKernelFunction()`)
+   - `deepResearch` → итеративный цикл Researcher → Critic → Synthesizer
+   - без учётных данных → `SimulatedWorkflowExecutor`
+
+Новый тип workflow = новая DI-регистрация `IWorkflowExecutor`, без правки switch.
 
 ### Конфигурация
 
-- `appsettings.json` — настройки логирования, OpenAI endpoint
-- `workflow-*.json` — декларативные описания workflow (копируются в output)
+- `appsettings.json` — логирование, OpenAI/Ollama endpoint, `WorkflowSettings:DefaultConfigPath`, fallback-секция `ContextBudget`
+- `workflow-*.json` — декларативные описания workflow (копируются в output); опциональная секция `contextBudget` в корне
 - User Secrets — хранение `OpenAI:ApiKey` без коммита в Git (UserSecretsId в csproj)
 
 ## Соглашения

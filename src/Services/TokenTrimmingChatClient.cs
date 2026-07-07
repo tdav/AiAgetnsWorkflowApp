@@ -203,14 +203,13 @@ public sealed class TokenTrimmingChatClient : DelegatingChatClient
             {
                 continue;
             }
-            var tokens = TokenEstimator.Estimate(text, budget.CharsPerToken);
+            var tokens = TokenEstimator.Estimate(text, budget);
             if (tokens <= budget.MaxToolResultTokens)
             {
                 continue;
             }
 
-            var ratio = budget.CharsPerToken > 0 ? budget.CharsPerToken : TokenEstimator.DefaultCharsPerToken;
-            var maxChars = (int)(budget.MaxToolResultTokens * ratio);
+            var maxChars = TokenEstimator.GetTruncationIndex(text, budget.MaxToolResultTokens, budget);
             var truncated = text[..maxChars] + $"\n…[truncated ~{tokens - budget.MaxToolResultTokens} tokens]";
             newContents ??= new List<AIContent>(message.Contents);
             newContents[i] = new FunctionResultContent(functionResult.CallId, truncated);
@@ -230,7 +229,7 @@ public sealed class TokenTrimmingChatClient : DelegatingChatClient
             {
                 continue; // would be evicted
             }
-            total += TokenEstimator.Estimate(GetMessageText(list[i]), budget.CharsPerToken) + 8;
+            total += TokenEstimator.Estimate(GetMessageText(list[i]), budget) + 8;
         }
         return total;
     }

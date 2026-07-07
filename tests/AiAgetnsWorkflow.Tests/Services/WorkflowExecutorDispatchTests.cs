@@ -15,14 +15,20 @@ public class WorkflowExecutorDispatchTests
         Substitute.For<IAgentActivityLogger>(),
         NullLogger<AgentTeamBuilder>.Instance);
 
+    private static SelectionFunctionRegistry SelectionFunctions() => new(
+        new ISelectionFunction[] { new KeywordSelectionFunction(NullLogger<KeywordSelectionFunction>.Instance) },
+        NullLogger<SelectionFunctionRegistry>.Instance);
+
     private static SequentialWorkflowExecutor Sequential() => new(
-        TeamBuilder(), Substitute.For<IAgentActivityLogger>(), NullLogger<SequentialWorkflowExecutor>.Instance);
+        TeamBuilder(), SelectionFunctions(), Substitute.For<IAgentActivityLogger>(),
+        NullLogger<SequentialWorkflowExecutor>.Instance);
 
     private static ConcurrentWorkflowExecutor Concurrent() => new(
         TeamBuilder(), Substitute.For<IAgentActivityLogger>(), NullLogger<ConcurrentWorkflowExecutor>.Instance);
 
     private static MagenticWorkflowExecutor Magentic() => new(
         Substitute.For<IChatClientProvider>(),
+        TeamBuilder(),
         Substitute.For<IAgentActivityLogger>(),
         NullLoggerFactory.Instance,
         NullLogger<MagenticWorkflowExecutor>.Instance);

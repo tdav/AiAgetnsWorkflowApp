@@ -33,6 +33,8 @@ public class TokenTrimmingChatClientTests
             MaxToolResultTokens = 10,
             CharsPerToken = 4.0,
             Strategy = ContextBudgetConfiguration.TruncateStrategy,
+            // deterministic chars math for exact assertions below
+            Tokenizer = ContextBudgetConfiguration.CharsTokenizerName,
         };
         var inner = new FakeChatClient();
         using var sut = CreateSut(inner, budget);

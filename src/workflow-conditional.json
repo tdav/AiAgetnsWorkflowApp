@@ -7,8 +7,9 @@
     "startAgent": "TicketAnalyzerAgent",
     "edges": [
       { "from": "TicketAnalyzerAgent", "to": "TicketClassifierAgent", "label": "Analysis" },
-      { "from": "TicketClassifierAgent", "to": "TechnicalSupportAgent", "label": "Tech Route" },
-      { "from": "TechnicalSupportAgent", "to": "ResponseGeneratorAgent", "label": "Resolution" }
+      { "from": "TechnicalSupportAgent", "to": "ResponseGeneratorAgent", "label": "Resolution" },
+      { "from": "BillingSupportAgent", "to": "ResponseGeneratorAgent", "label": "Resolution" },
+      { "from": "GeneralInquiryAgent", "to": "ResponseGeneratorAgent", "label": "Resolution" }
     ],
     "conditionalEdges": [
       {
@@ -48,6 +49,20 @@
       "metadata": { "stage": "resolution", "specialization": "technical" }
     },
     {
+      "name": "BillingSupportAgent",
+      "description": "Resolves billing and payment issues",
+      "instructions": "Review the billing question, explain charges or refunds, and outline the next steps for the customer.",
+      "modelId": "bjoernb/gemma4-e2b-fast",
+      "metadata": { "stage": "resolution", "specialization": "billing" }
+    },
+    {
+      "name": "GeneralInquiryAgent",
+      "description": "Handles general questions",
+      "instructions": "Answer the general inquiry clearly and point the customer to relevant resources.",
+      "modelId": "bjoernb/gemma4-e2b-fast",
+      "metadata": { "stage": "resolution", "specialization": "general" }
+    },
+    {
       "name": "ResponseGeneratorAgent",
       "description": "Composes the customer-facing reply",
       "instructions": "Use the prior agents' outputs to write a concise, empathetic, professional response with clear next steps.",
@@ -65,6 +80,6 @@
   },
 
   "settings": {
-    "_note": "conditionalEdges.selectionFunction is parsed but not yet executed (deferred). Static edges drive routing in current version."
+    "_note": "conditionalEdges route dynamically: selectionFunction is resolved by name from DI; unknown names fall back to the built-in keywordMatch (keyword derived from target agent names or the 'keywords' parameter map)."
   }
 }

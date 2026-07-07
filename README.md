@@ -2,8 +2,9 @@
 
 Консольное приложение для оркестрации AI-агентов через **Microsoft Agent Framework** и **Semantic Kernel** на C# **.NET 10.0**.
 
-> 🎯 **4 типа оркестрации:** Sequential, Concurrent, Conditional, Magentic
+> 🎯 **5 типов оркестрации:** Sequential, Concurrent, Conditional, Magentic, DeepResearch
 > 🔌 **Расширения:** MCP (Model Context Protocol) серверы и C# плагины как инструменты агентов
+> 🧮 **Контроль контекста:** бюджет токенов (`contextBudget`) с обрезкой/суммаризацией истории на каждом вызове модели
 
 ## gemma 4 practical guide for developers
 https://dev.to/arshtechpro/gemma-4-a-practical-guide-for-developers-2co5
@@ -21,13 +22,16 @@ https://docs.lm-kit.com/lm-kit-net/guides/model-catalog/model-catalog.html
 
 ## 🎯 Возможности
 
-- ✅ 4 типа оркестрации:
+- ✅ 5 типов оркестрации (каждый — отдельная стратегия `IWorkflowExecutor`):
   - **Sequential** — pipeline A→B→C
   - **Concurrent** — fan-out/fan-in
-  - **Conditional** — статический DAG (selection-функции на roadmap)
-  - **Magentic** — динамическая координация менеджером (Semantic Kernel)
+  - **Conditional** — динамическая маршрутизация через `selectionFunction` (`ISelectionFunction`)
+  - **Magentic** — динамическая координация менеджером (Semantic Kernel), с пробросом MCP/plugin-инструментов в Kernel
+  - **DeepResearch** — итеративное исследование (Researcher → Critic → Synthesizer)
+- ✅ Бюджет токенов `contextBudget`: обрезка tool-результатов, скользящее окно истории, суммаризация вытесненных сообщений (`TokenTrimmingChatClient`)
 - ✅ MCP-инструменты через `IMcpClientPool` (stdio + http)
 - ✅ C# плагины через `IAgentPlugin` + `AgentPluginRegistry`
+- ✅ Провайдеры моделей через `IChatClientProvider`: OpenAI и Ollama (OpenAI-совместимый endpoint)
 - ✅ Mermaid-визуализация workflow в консоль
 - ✅ Graceful shutdown (Ctrl+C → `CancellationToken`)
 - ✅ Демо-режим без API-ключа (для проверки конфигурации)
@@ -37,7 +41,7 @@ https://docs.lm-kit.com/lm-kit-net/guides/model-catalog/model-catalog.html
 ## 📋 Требования
 
 - .NET 10.0 SDK
-- OpenAI API key или Azure OpenAI endpoint (для реального запуска; без ключа работает демо-режим)
+- OpenAI API key или Ollama endpoint (для реального запуска; без учётных данных работает демо-режим; Azure OpenAI не поддерживается)
 - (Опционально) Node.js + npx — если используются NPM-based MCP-серверы
 
 ## 🚀 Быстрый старт
@@ -71,14 +75,28 @@ AiAgetnsWorkflowApp/
 │   ├── Program.cs                        # Точка входа + DI + Ctrl+C
 │   ├── appsettings.json                  # Логирование, OpenAI endpoint
 │   │
-│   ├── Interfaces/                       # IWorkflowOrchestrator, IMcpClientPool,
-│   │                                     # IAgentPlugin, IHostedToolFactory, ...
+│   ├── Interfaces/                       # IWorkflowOrchestrator, IWorkflowExecutor,
+│   │                                     # IChatClientProvider, IAgentFactory,
+│   │                                     # ISelectionFunction, IMcpClientPool, IAgentPlugin, ...
 │   ├── Models/                           # WorkflowConfiguration + AgentConfiguration,
 │   │                                     # McpServerConfiguration, ManagerConfiguration, ...
 │   ├── Services/
 │   │   ├── WorkflowJsonLoader.cs         # JSON → конфигурация + валидация
 │   │   ├── WorkflowVisualizer.cs         # Mermaid-диаграммы в консоль
-│   │   ├── MagenticWorkflowOrchestrator.cs  # Главный оркестратор (все 4 типа)
+│   │   ├── MagenticWorkflowOrchestrator.cs  # Тонкий фасад: load → visualize → dispatch
+│   │   ├── Executors/                    # Стратегии IWorkflowExecutor
+│   │   │   ├── SequentialWorkflowExecutor.cs   # sequential + conditional
+│   │   │   ├── ConcurrentWorkflowExecutor.cs
+│   │   │   ├── MagenticWorkflowExecutor.cs
+│   │   │   ├── DeepResearchWorkflowExecutor.cs
+│   │   │   ├── SimulatedWorkflowExecutor.cs    # демо-режим без ключей
+│   │   │   └── AgentTeamBuilder.cs             # общий сборщик агентов/инструментов
+│   │   ├── ChatClientProvider.cs         # Выбор провайдера (OpenAI/Ollama) + TokenTrimming-обёртка
+│   │   ├── TokenTrimmingChatClient.cs    # Middleware бюджета токенов
+│   │   ├── TokenEstimator.cs             # tiktoken (cl100k_base) или chars-эвристика
+│   │   ├── SelectionFunctionRegistry.cs  # Резолв selectionFunction по имени
+│   │   ├── KeywordSelectionFunction.cs   # Встроенная keywordMatch-маршрутизация
+│   │   ├── AgentFactory.cs               # IAgentFactory.BuildAgent(config, tools, overrides)
 │   │   ├── McpClientPool.cs              # Lazy-инициализация MCP-клиентов
 │   │   ├── HostedToolFactory.cs          # Создание hosted-инструментов
 │   │   ├── AgentPluginRegistry.cs        # Реестр C#-плагинов
@@ -95,12 +113,13 @@ AiAgetnsWorkflowApp/
 │   └── ...
 │
 ├── tests/
-│   ├── AiAgetnsWorkflow.Tests/           # xUnit + NSubstitute + FluentAssertions
+│   ├── AiAgetnsWorkflow.Tests/           # TUnit + NSubstitute + FluentAssertions
 │   │   ├── Mcp/                          # тесты McpClientPool, EnvVarSubstitution
 │   │   ├── Plugins/                      # тесты AgentPluginRegistry
 │   │   ├── Json/                         # тесты WorkflowJsonLoader
 │   │   ├── Integration/                  # OrchestratorWiringTests
 │   │   └── Fakes/                        # FakeChatClient, FakeMcpClient, ...
+│   ├── MagenticWorkflowApp.Tests/        # TUnit-тесты (executors, token trimming, selection functions)
 │   └── FakeMcpServer/                    # Тестовый MCP-сервер для интеграционных тестов
 │
 └── docs/
@@ -115,10 +134,11 @@ AiAgetnsWorkflowApp/
 # Сборка
 dotnet build src/
 
-# Все тесты
-dotnet test tests/AiAgetnsWorkflow.Tests/
+# Все тесты (TUnit на Microsoft.Testing.Platform; runner задан в global.json в корне репозитория)
+dotnet test
 
-# Запуск (workflow-config.json по умолчанию)
+# Запуск (файл по умолчанию — из WorkflowSettings:DefaultConfigPath в appsettings.json,
+# сейчас workflow-deep-research.json)
 dotnet run --project src/
 
 # Запуск с конкретным workflow
@@ -273,24 +293,36 @@ Pipeline A→B→C через `edges`. Выход одного агента → 
 
 ### 3. Conditional
 
-Статический DAG через `edges`. Selection-функции (`conditionalEdges` с `selectionFunction`) принимаются в JSON, но **не выполняются** в текущей версии — выводится warning, выполняется только статическая часть.
+Динамическая маршрутизация через `conditionalEdges`: выход агента-источника передаётся в selection-функцию, которая выбирает следующего агента из `toOptions`.
 
 ```json
 {
   "workflowType": "Conditional",
   "orchestration": {
     "startAgent": "Classifier",
-    "edges": [{ "from": "Classifier", "to": "Responder" }],
     "conditionalEdges": [
       {
         "from": "Classifier",
-        "toOptions": ["Tech", "Billing", "General"],
-        "selectionFunction": "classify_issue_type"
+        "toOptions": ["TechnicalSupportAgent", "BillingSupportAgent", "GeneralInquiryAgent"],
+        "selectionFunction": "classify_ticket_type"
       }
+    ],
+    "edges": [
+      { "from": "TechnicalSupportAgent", "to": "ResponseGeneratorAgent" },
+      { "from": "BillingSupportAgent", "to": "ResponseGeneratorAgent" },
+      { "from": "GeneralInquiryAgent", "to": "ResponseGeneratorAgent" }
     ]
   }
 }
 ```
+
+Как резолвится `selectionFunction`:
+
+- Реализации `ISelectionFunction` регистрируются в DI и находятся по имени (без учёта регистра) через `SelectionFunctionRegistry`.
+- Неизвестное имя → fallback на встроенную `keywordMatch` (`KeywordSelectionFunction`): либо явная карта через параметр ребра `"keywords"` (`{keyword: targetAgent}`), либо ключевое слово выводится из имени каждого целевого агента (первый CamelCase-токен: `TechnicalSupportAgent` → `"technical"`).
+- Нет совпадения → первый агент из `toOptions`.
+
+> **Важно:** граф должен сходиться к одному терминальному агенту (в примере все ветки ведут в `ResponseGeneratorAgent`).
 
 ### 4. Magentic
 
@@ -309,7 +341,7 @@ Pipeline A→B→C через `edges`. Выход одного агента → 
 }
 ```
 
-> **Замечание:** Magentic в текущей итерации использует SemanticKernel `ChatCompletionAgent` без передачи `AITool` в SK Kernel. Tool bridging (M.E.AI → KernelPlugin) — в roadmap. При наличии инструментов в конфиге пишется warning.
+> **Замечание:** MCP- и plugin-инструменты (`AIFunction`) пробрасываются в Kernel каждого SK-агента через `AsKernelFunction()` как плагин `AgentTools` с `FunctionChoiceBehavior.Auto`. Hosted tools (`CodeInterpreter`) в SK не пробрасываются — пишется warning. SK/magentic-путь не проходит через токен-тримминг (ограничен `maxRoundCount` менеджера).
 
 ## 📊 Формат JSON конфигурации
 
@@ -317,12 +349,13 @@ Pipeline A→B→C через `edges`. Выход одного агента → 
 
 | Поле | Тип | Описание |
 |------|-----|----------|
-| `workflowType` | string | `"Sequential"`, `"Concurrent"`, `"Conditional"`, `"Magentic"` |
+| `workflowType` | string | `"Sequential"`, `"Concurrent"`, `"Conditional"`, `"Magentic"`, `"DeepResearch"` |
 | `task` | string | Описание задачи |
 | `manager` | object | Конфигурация менеджера (Magentic) |
 | `orchestration` | object | Конфигурация оркестрации (Sequential/Concurrent/Conditional) |
 | `agents` | array | Список агентов |
 | `mcpServers` | array | Описание MCP-серверов |
+| `contextBudget` | object | Бюджет токенов (см. раздел «Оптимизация токенов»); опционально |
 | `settings` | object | Дополнительные настройки |
 
 ### Конфигурация агента
@@ -336,7 +369,51 @@ Pipeline A→B→C через `edges`. Выход одного агента → 
 | `tools` | string[] | Hosted tools (например, `["CodeInterpreter"]`) |
 | `mcpServers` | string[] | Имена MCP-серверов из корневого `mcpServers[]` |
 | `plugins` | string[] | Имена C#-плагинов из `IAgentPluginRegistry` |
+| `maxOutputTokens` | int? | Лимит выходных токенов для агента (опционально) |
+| `temperature` | float? | Температура модели для агента (опционально) |
 | `metadata` | object | Произвольные метаданные |
+
+## 🧮 Оптимизация токенов (`contextBudget`)
+
+Опциональная секция `contextBudget` в корне workflow-JSON (fallback — секция `ContextBudget` в `appsettings.json`). Каждый `IChatClient` оборачивается в middleware `TokenTrimmingChatClient`, который на **каждом** вызове модели:
+
+1. **Обрезает** слишком большие tool-результаты до `maxToolResultTokens` (маркер `…[truncated ~N tokens]`).
+2. **Ограничивает историю** скользящим окном: system prompt + первое сообщение задачи + свежий хвост; пары tool call/tool result никогда не разрываются.
+3. **Вытесненную середину** либо суммаризирует отдельным LLM-вызовом (результат кэшируется), либо просто отбрасывает (`strategy: "truncate"`).
+
+```json
+{
+  "workflowType": "Sequential",
+  "contextBudget": {
+    "maxInputTokens": 32000,
+    "maxToolResultTokens": 4000,
+    "historyWindowMessages": 40,
+    "tokenizer": "tiktoken",
+    "strategy": "summarize",
+    "summaryMaxTokens": 1024
+  }
+}
+```
+
+### Поля `contextBudget`
+
+| Поле | Тип | По умолчанию | Описание |
+|------|-----|--------------|----------|
+| `maxInputTokens` | int | `32000` | Бюджет входных токенов на вызов модели |
+| `maxToolResultTokens` | int | `4000` | Максимум токенов на один tool-результат |
+| `historyWindowMessages` | int | `40` | Размер скользящего окна истории (сообщений) |
+| `tokenizer` | string | `"tiktoken"` | `"tiktoken"` (cl100k_base, Microsoft.ML.Tokenizers) или `"chars"` (эвристика chars/`charsPerToken`) |
+| `charsPerToken` | double | `4.0` | Делитель для `"chars"`-эвристики |
+| `strategy` | string | `"summarize"` | `"summarize"` (вытесненное суммаризируется LLM) или `"truncate"` (отбрасывается) |
+| `summaryMaxTokens` | int | `1024` | Лимит токенов на суммаризацию |
+
+Дополнительно в DeepResearch:
+
+- Critic получает только находки текущей итерации + однострочный дайджест старых.
+- Вход Synthesizer ограничен ~60% от `maxInputTokens`; невместившиеся находки включаются дайджестом.
+- `chatReducerWindow` реально применяется к сессии каждой роли.
+
+> **Ограничение:** SK/magentic-путь через токен-тримминг не проходит (ограничен `maxRoundCount` менеджера).
 
 ## 🔐 Безопасность
 
@@ -353,12 +430,14 @@ dotnet user-secrets set "OpenAI:ApiKey" "sk-..." --project src/
 
 ## 🐛 Демо-режим
 
-Если ни `OpenAI:ApiKey`, ни `AzureOpenAI:Endpoint` не заданы — приложение запускается в **DEMO branch**: симулирует выполнение, печатает события агентов, не делает реальных вызовов к LLM. Удобно для проверки JSON-конфигурации.
+Если учётные данные провайдера не заданы — выполнение уходит в `SimulatedWorkflowExecutor`: симулирует выполнение, печатает события агентов, не делает реальных вызовов к LLM. Удобно для проверки JSON-конфигурации.
 
 ## 🧪 Тесты
 
+Оба тестовых проекта — на **TUnit 1.58** поверх Microsoft.Testing.Platform (миграция с xUnit); FluentAssertions и NSubstitute сохранены. `dotnet test` работает через `global.json` в корне репозитория (`{"test":{"runner":"Microsoft.Testing.Platform"}}`) и `dotnet.config`. Всего 92 + 27 тестов.
+
 ```bash
-dotnet test tests/AiAgetnsWorkflow.Tests/
+dotnet test
 ```
 
 Покрытие:
@@ -389,10 +468,11 @@ dotnet test tests/AiAgetnsWorkflow.Tests/
 
 | Область | Состояние |
 |--------|-----------|
-| Selection-функции в Conditional | ❌ Не реализовано (только статические `edges`) |
-| Tool bridging в Magentic | ❌ Не реализовано (`AITool` → `KernelPlugin`) |
-| Кастомные `aggregationStrategy` в Concurrent | ❌ Не реализовано (используется default) |
-| Azure OpenAI в Magentic | ❌ Только OpenAI |
+| Selection-функции в Conditional | ✅ Реализовано (`ISelectionFunction` + fallback `keywordMatch`) |
+| Tool bridging в Magentic | ✅ Реализовано (`AIFunction` → Kernel через `AsKernelFunction()`; hosted tools — нет) |
+| Кастомные `aggregationStrategy` в Concurrent | ❌ Не реализовано (игнорируется, используется default-коллектор) |
+| Azure OpenAI | ❌ Не поддерживается (`NotSupportedException`); только OpenAI и Ollama |
+| Токен-тримминг в SK/magentic-пути | ❌ Не применяется (ограничен `maxRoundCount` менеджера) |
 | Многократный `RegisterServersAsync` | ❌ Pool single-use per app lifetime |
 
 ## 🔗 Полезные ссылки

@@ -10,6 +10,8 @@ public class ContextBudgetConfiguration
 {
     public const string TruncateStrategy = "truncate";
     public const string SummarizeStrategy = "summarize";
+    public const string TiktokenTokenizerName = "tiktoken";
+    public const string CharsTokenizerName = "chars";
 
     /// <summary>Upper bound (estimated tokens) for the message list sent to the model.</summary>
     public int MaxInputTokens { get; set; } = 32000;
@@ -32,6 +34,15 @@ public class ContextBudgetConfiguration
     /// <summary>Max output tokens for the summarization call.</summary>
     public int SummaryMaxTokens { get; set; } = 1024;
 
+    /// <summary>
+    /// "tiktoken" (default): accurate cl100k_base token counting;
+    /// "chars": chars/CharsPerToken heuristic (no tokenizer dependency at runtime).
+    /// </summary>
+    public string Tokenizer { get; set; } = TiktokenTokenizerName;
+
     public bool UseSummarization =>
         !string.Equals(Strategy, TruncateStrategy, StringComparison.OrdinalIgnoreCase);
+
+    public bool UseAccurateTokenizer =>
+        !string.Equals(Tokenizer, CharsTokenizerName, StringComparison.OrdinalIgnoreCase);
 }

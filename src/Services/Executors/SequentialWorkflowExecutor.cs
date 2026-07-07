@@ -2,28 +2,32 @@ using MagenticWorkflowApp.Exceptions;
 using MagenticWorkflowApp.Interfaces;
 using MagenticWorkflowApp.Models;
 using Microsoft.Agents.AI.Workflows;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
 namespace MagenticWorkflowApp.Services.Executors;
 
 /// <summary>
 /// Executes "sequential" and "conditional" workflows over Microsoft.Agents.AI.Workflows.
-/// Both build a static edge graph; conditional additionally carries conditionalEdges,
-/// whose selection-function support is deferred (a warning is emitted and the static
-/// part of the graph runs as-is).
+/// Both build a static edge graph; conditional edges route dynamically via an
+/// <see cref="ISelectionFunction"/> resolved by name (default: keyword matching
+/// over the routing agent's output).
 /// </summary>
 public sealed class SequentialWorkflowExecutor : IWorkflowExecutor
 {
     private readonly AgentTeamBuilder teamBuilder;
+    private readonly ISelectionFunctionRegistry selectionFunctions;
     private readonly IAgentActivityLogger activity;
     private readonly ILogger<SequentialWorkflowExecutor> logger;
 
     public SequentialWorkflowExecutor(
         AgentTeamBuilder teamBuilder,
+        ISelectionFunctionRegistry selectionFunctions,
         IAgentActivityLogger activity,
         ILogger<SequentialWorkflowExecutor> logger)
     {
         this.teamBuilder = teamBuilder;
+        this.selectionFunctions = selectionFunctions;
         this.activity = activity;
         this.logger = logger;
     }
@@ -59,13 +63,27 @@ public sealed class SequentialWorkflowExecutor : IWorkflowExecutor
             }
         }
 
-        // Selection-function support is deferred (см. Future work спеки).
-        // Если в JSON присутствуют conditionalEdges — выводим warning и идём только
-        // по статическим edges.
-        if (config.Orchestration?.ConditionalEdges?.Count > 0)
+        var conditionalEdges = config.Orchestration?.ConditionalEdges ?? new List<ConditionalEdgeConfiguration>();
+        foreach (var ce in conditionalEdges)
         {
-            logger.LogWarning(
-                "Conditional edges present but selection-function support is deferred — статическая часть workflow выполняется как есть.");
+            if (!agents.ContainsKey(ce.From))
+            {
+                throw new WorkflowValidationException(
+                    $"Conditional edge references unknown agent '{ce.From}'");
+            }
+            if (ce.ToOptions.Count == 0)
+            {
+                throw new WorkflowValidationException(
+                    $"Conditional edge from '{ce.From}' requires non-empty toOptions");
+            }
+            foreach (var option in ce.ToOptions)
+            {
+                if (!agents.ContainsKey(option))
+                {
+                    throw new WorkflowValidationException(
+                        $"Conditional edge from '{ce.From}' references unknown agent '{option}'");
+                }
+            }
         }
 
         // SDK 1.3.0: WorkflowBuilder ctor takes start ExecutorBinding;
@@ -76,9 +94,26 @@ public sealed class SequentialWorkflowExecutor : IWorkflowExecutor
             builder.AddEdge(agents[edge.From], agents[edge.To]);
         }
 
+        // Conditional routing: one predicated edge per target; the selection function
+        // picks a single target from the routing agent's last output.
+        foreach (var ce in conditionalEdges)
+        {
+            var selector = selectionFunctions.Resolve(ce.SelectionFunction);
+            foreach (var target in ce.ToOptions)
+            {
+                var edgeConfig = ce;
+                var targetName = target;
+                builder.AddEdge<List<ChatMessage>>(
+                    agents[ce.From], agents[targetName],
+                    messages => IsSelectedTarget(selector, edgeConfig, targetName, messages));
+            }
+        }
+
         // Robust terminal detection: collect all leaves (nodes with no outgoing edge).
-        // The static graph expects a single chain — exactly one leaf.
-        var fromSet = edges.Select(e => e.From).ToHashSet(StringComparer.Ordinal);
+        // The graph (static + conditional) must converge to exactly one leaf.
+        var fromSet = edges.Select(e => e.From)
+            .Concat(conditionalEdges.Select(ce => ce.From))
+            .ToHashSet(StringComparer.Ordinal);
         var leaves = config.Agents
             .Select(a => a.Name)
             .Where(n => !fromSet.Contains(n))
@@ -103,5 +138,18 @@ public sealed class SequentialWorkflowExecutor : IWorkflowExecutor
 
         var workflow = builder.Build();
         await teamBuilder.RunWorkflowAsync(workflow, config.Task).ConfigureAwait(false);
+    }
+
+    private bool IsSelectedTarget(
+        ISelectionFunction selector, ConditionalEdgeConfiguration edge, string target, List<ChatMessage>? messages)
+    {
+        var lastText = messages?.LastOrDefault(m => !string.IsNullOrWhiteSpace(m.Text))?.Text ?? string.Empty;
+        var chosen = selector.SelectTarget(edge, lastText);
+        if (!string.Equals(chosen, target, StringComparison.Ordinal))
+        {
+            return false;
+        }
+        activity.OnManagerDecision("ROUTER", $"{edge.From} → {chosen} (function: {selector.Name})");
+        return true;
     }
 }

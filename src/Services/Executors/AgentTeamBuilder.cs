@@ -60,19 +60,27 @@ public sealed class AgentTeamBuilder
 
         foreach (var agentConfig in config.Agents)
         {
-            var hostedTools = hostedFactory.Create(agentConfig.Tools);
-            var mcpTools = await mcpPool.GetToolsAsync(agentConfig.McpServers, cancellationToken).ConfigureAwait(false);
-            var pluginTools = ResolvePluginTools(agentConfig);
-
-            var allTools = hostedTools.Concat(mcpTools).Concat(pluginTools).ToArray();
-
-            logger.LogInformation(
-                "Agent {Agent} resolved tools: hosted={H}, mcp={M}, plugins={P}",
-                agentConfig.Name, hostedTools.Count, mcpTools.Count, pluginTools.Count);
-
+            var allTools = await ResolveToolsAsync(agentConfig, cancellationToken).ConfigureAwait(false);
             agents[agentConfig.Name] = agentFactory.BuildAgent(agentConfig, allTools);
         }
         return agents;
+    }
+
+    /// <summary>Resolves hosted + MCP + plugin tools declared by the agent configuration.</summary>
+    public async Task<IReadOnlyList<AITool>> ResolveToolsAsync(
+        AgentConfiguration agentConfig, CancellationToken cancellationToken)
+    {
+        var hostedTools = hostedFactory.Create(agentConfig.Tools);
+        var mcpTools = await mcpPool.GetToolsAsync(agentConfig.McpServers, cancellationToken).ConfigureAwait(false);
+        var pluginTools = ResolvePluginTools(agentConfig);
+
+        var allTools = hostedTools.Concat(mcpTools).Concat(pluginTools).ToArray();
+
+        logger.LogInformation(
+            "Agent {Agent} resolved tools: hosted={H}, mcp={M}, plugins={P}",
+            agentConfig.Name, hostedTools.Count, mcpTools.Count, pluginTools.Count);
+
+        return allTools;
     }
 
     /// <summary>

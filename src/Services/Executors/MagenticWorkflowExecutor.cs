@@ -1,6 +1,8 @@
 using MagenticWorkflowApp.Interfaces;
 using MagenticWorkflowApp.Models;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
 using Microsoft.SemanticKernel.Agents.Magentic;
 using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
@@ -12,24 +14,30 @@ namespace MagenticWorkflowApp.Services.Executors;
 /// <summary>
 /// Executes "magentic" workflows on Semantic Kernel: a StandardMagenticManager
 /// dynamically coordinates ChatCompletionAgents on an in-process runtime.
-/// Tool/MCP/plugin bridging into SK is deferred (a warning is emitted per agent).
+/// MCP/plugin tools are bridged into each agent's Kernel via AIFunction →
+/// KernelFunction; hosted tools (e.g. CodeInterpreter) cannot be bridged and
+/// produce a warning.
 /// </summary>
 public sealed class MagenticWorkflowExecutor : IWorkflowExecutor
 {
     private const int MagenticTimeoutMinutesDefault = 30;
+    private const string BridgedToolsPluginName = "AgentTools";
 
     private readonly IChatClientProvider clientProvider;
+    private readonly AgentTeamBuilder teamBuilder;
     private readonly IAgentActivityLogger activity;
     private readonly ILoggerFactory loggerFactory;
     private readonly ILogger<MagenticWorkflowExecutor> logger;
 
     public MagenticWorkflowExecutor(
         IChatClientProvider clientProvider,
+        AgentTeamBuilder teamBuilder,
         IAgentActivityLogger activity,
         ILoggerFactory loggerFactory,
         ILogger<MagenticWorkflowExecutor> logger)
     {
         this.clientProvider = clientProvider;
+        this.teamBuilder = teamBuilder;
         this.activity = activity;
         this.loggerFactory = loggerFactory;
         this.logger = logger;
@@ -50,13 +58,7 @@ public sealed class MagenticWorkflowExecutor : IWorkflowExecutor
             var kernel = clientProvider.BuildKernel(
                 agentConfig.ModelId, agentConfig.EnableThinking, agentName: agentConfig.Name);
 
-            var toolCount = agentConfig.Tools.Count + agentConfig.McpServers.Count + agentConfig.Plugins.Count;
-            if (toolCount > 0)
-            {
-                logger.LogWarning(
-                    "Agent '{Agent}' has {Count} tool(s) configured, but tool bridging to SemanticKernel is deferred for Magentic workflows",
-                    agentConfig.Name, toolCount);
-            }
+            var hasFunctions = await BridgeToolsIntoKernelAsync(kernel, agentConfig, cancellationToken).ConfigureAwait(false);
 
             var instructions = agentConfig.EnableThinking
                 ? "<|think|>\n" + agentConfig.Instructions
@@ -68,6 +70,12 @@ public sealed class MagenticWorkflowExecutor : IWorkflowExecutor
                 Description = agentConfig.Description,
                 Instructions = instructions,
                 Kernel = kernel,
+                Arguments = hasFunctions
+                    ? new KernelArguments(new PromptExecutionSettings
+                    {
+                        FunctionChoiceBehavior = FunctionChoiceBehavior.Auto(),
+                    })
+                    : null,
             });
         }
 
@@ -119,5 +127,38 @@ public sealed class MagenticWorkflowExecutor : IWorkflowExecutor
         {
             await runtime.StopAsync(cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Bridges the agent's MCP/plugin tools (AIFunction) into the SK kernel as a
+    /// KernelFunction plugin. Returns true when at least one function was bridged.
+    /// </summary>
+    private async Task<bool> BridgeToolsIntoKernelAsync(
+        Kernel kernel, AgentConfiguration agentConfig, CancellationToken cancellationToken)
+    {
+        var tools = await teamBuilder.ResolveToolsAsync(agentConfig, cancellationToken).ConfigureAwait(false);
+        if (tools.Count == 0)
+        {
+            return false;
+        }
+
+        var functions = tools.OfType<AIFunction>().Select(f => f.AsKernelFunction()).ToList();
+        var unbridgeable = tools.Count - functions.Count;
+        if (unbridgeable > 0)
+        {
+            logger.LogWarning(
+                "Agent '{Agent}': {Count} hosted tool(s) cannot be bridged to SemanticKernel and are skipped",
+                agentConfig.Name, unbridgeable);
+        }
+        if (functions.Count == 0)
+        {
+            return false;
+        }
+
+        kernel.Plugins.AddFromFunctions(BridgedToolsPluginName, functions);
+        logger.LogInformation(
+            "Agent '{Agent}': bridged {Count} tool(s) into SemanticKernel",
+            agentConfig.Name, functions.Count);
+        return true;
     }
 }
