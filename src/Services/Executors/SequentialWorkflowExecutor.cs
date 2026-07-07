@@ -94,18 +94,19 @@ public sealed class SequentialWorkflowExecutor : IWorkflowExecutor
             builder.AddEdge(agents[edge.From], agents[edge.To]);
         }
 
-        // Conditional routing: one predicated edge per target; the selection function
-        // picks a single target from the routing agent's last output.
+        // Conditional routing: one predicated edge per target. Conditions are evaluated
+        // per flowing message, so the decision made on the routing agent's textual
+        // output is cached per edge and reused for text-less batches (TurnToken etc.).
         foreach (var ce in conditionalEdges)
         {
             var selector = selectionFunctions.Resolve(ce.SelectionFunction);
+            var route = new ConditionalRoute(selector, ce, activity);
             foreach (var target in ce.ToOptions)
             {
-                var edgeConfig = ce;
                 var targetName = target;
                 builder.AddEdge<List<ChatMessage>>(
                     agents[ce.From], agents[targetName],
-                    messages => IsSelectedTarget(selector, edgeConfig, targetName, messages));
+                    messages => route.IsSelected(targetName, messages));
             }
         }
 
@@ -140,16 +141,47 @@ public sealed class SequentialWorkflowExecutor : IWorkflowExecutor
         await teamBuilder.RunWorkflowAsync(workflow, config.Task).ConfigureAwait(false);
     }
 
-    private bool IsSelectedTarget(
-        ISelectionFunction selector, ConditionalEdgeConfiguration edge, string target, List<ChatMessage>? messages)
+    /// <summary>
+    /// Per-edge routing state shared by all target predicates of one conditional edge.
+    /// Text-bearing messages update the decision; text-less messages follow the last
+    /// decision (or the first option when nothing has been decided yet).
+    /// ponytail: streaming per-message routing — context forwarded before the routing
+    /// agent answers follows the then-current decision; buffer via a custom executor
+    /// if strict turn-based routing is ever required.
+    /// </summary>
+    private sealed class ConditionalRoute
     {
-        var lastText = messages?.LastOrDefault(m => !string.IsNullOrWhiteSpace(m.Text))?.Text ?? string.Empty;
-        var chosen = selector.SelectTarget(edge, lastText);
-        if (!string.Equals(chosen, target, StringComparison.Ordinal))
+        private readonly ISelectionFunction selector;
+        private readonly ConditionalEdgeConfiguration edge;
+        private readonly IAgentActivityLogger activity;
+        private readonly object gate = new();
+        private string? currentTarget;
+
+        public ConditionalRoute(
+            ISelectionFunction selector, ConditionalEdgeConfiguration edge, IAgentActivityLogger activity)
         {
-            return false;
+            this.selector = selector;
+            this.edge = edge;
+            this.activity = activity;
         }
-        activity.OnManagerDecision("ROUTER", $"{edge.From} → {chosen} (function: {selector.Name})");
-        return true;
+
+        public bool IsSelected(string target, List<ChatMessage>? messages)
+        {
+            lock (gate)
+            {
+                var text = messages?.LastOrDefault(m => !string.IsNullOrWhiteSpace(m.Text))?.Text;
+                if (text is not null)
+                {
+                    var chosen = selector.SelectTarget(edge, text);
+                    if (chosen is not null && !string.Equals(chosen, currentTarget, StringComparison.Ordinal))
+                    {
+                        currentTarget = chosen;
+                        activity.OnManagerDecision("ROUTER", $"{edge.From} → {chosen} (function: {selector.Name})");
+                    }
+                }
+                var effective = currentTarget ?? edge.ToOptions[0];
+                return string.Equals(effective, target, StringComparison.Ordinal);
+            }
+        }
     }
 }

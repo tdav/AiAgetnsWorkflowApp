@@ -30,11 +30,12 @@ public class SelectionFunctionTests
     }
 
     [Test]
-    public void SelectTarget_NoMatch_FallsBackToFirstOption()
+    public void SelectTarget_NoMatch_ReturnsNull()
     {
+        // Executor reuses its last per-edge decision when the function returns null.
         var edge = Edge("TechnicalSupportAgent", "BillingSupportAgent");
 
-        Keyword().SelectTarget(edge, "completely unrelated output").Should().Be("TechnicalSupportAgent");
+        Keyword().SelectTarget(edge, "completely unrelated output").Should().BeNull();
     }
 
     [Test]

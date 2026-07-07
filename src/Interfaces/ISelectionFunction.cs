@@ -13,8 +13,12 @@ public interface ISelectionFunction
     /// <summary>Name referenced by workflow JSON (case-insensitive).</summary>
     string Name { get; }
 
-    /// <summary>Returns the chosen target agent name (must be one of edge.ToOptions).</summary>
-    string SelectTarget(ConditionalEdgeConfiguration edge, string lastAgentOutput);
+    /// <summary>
+    /// Returns the chosen target agent name (one of edge.ToOptions) or null when the
+    /// output gives no basis for a decision — the executor then reuses its last
+    /// decision for this edge (or the first option if none was made yet).
+    /// </summary>
+    string? SelectTarget(ConditionalEdgeConfiguration edge, string lastAgentOutput);
 }
 
 /// <summary>Resolves selection functions by name with a keyword-matching default.</summary>

@@ -93,6 +93,11 @@ public sealed class AgentTeamBuilder
             .RunStreamingAsync(workflow, task)
             .ConfigureAwait(false);
 
+        // SDK 1.13: agent executors (ChatProtocolExecutor) accumulate incoming messages
+        // and only take their turn upon receiving a TurnToken — without it the run
+        // completes instantly having executed nothing.
+        await run.TrySendMessageAsync(new TurnToken(emitEvents: true)).ConfigureAwait(false);
+
         var errors = new List<Exception>();
         await foreach (var evt in run.WatchStreamAsync().ConfigureAwait(false))
         {
@@ -165,7 +170,7 @@ public sealed class AgentTeamBuilder
                 return workflowEx;
 
             case WorkflowOutputEvent o:
-                activity.OnWorkflowOutput(o.Data?.ToString() ?? "(no result)");
+                activity.OnWorkflowOutput(FormatWorkflowOutput(o.Data));
                 return null;
 
             default:
@@ -173,6 +178,16 @@ public sealed class AgentTeamBuilder
                 return null;
         }
     }
+
+    private static string FormatWorkflowOutput(object? data) => data switch
+    {
+        null => "(no result)",
+        List<ChatMessage> messages => string.Join(
+            Environment.NewLine,
+            messages.Where(m => !string.IsNullOrWhiteSpace(m.Text))
+                    .Select(m => $"{m.AuthorName ?? m.Role.Value}: {m.Text}")),
+        _ => data.ToString() ?? "(no result)",
+    };
 
     private static void ThrowIfErrors(List<Exception> errors)
     {

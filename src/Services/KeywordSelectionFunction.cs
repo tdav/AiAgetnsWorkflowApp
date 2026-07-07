@@ -24,7 +24,7 @@ public sealed class KeywordSelectionFunction : ISelectionFunction
 
     public string Name => DefaultName;
 
-    public string SelectTarget(ConditionalEdgeConfiguration edge, string lastAgentOutput)
+    public string? SelectTarget(ConditionalEdgeConfiguration edge, string lastAgentOutput)
     {
         var output = lastAgentOutput ?? string.Empty;
 
@@ -53,10 +53,10 @@ public sealed class KeywordSelectionFunction : ISelectionFunction
             }
         }
 
-        logger.LogWarning(
-            "Selection function '{Function}' matched no keyword in output from '{From}' — falling back to first option '{Target}'",
-            edge.SelectionFunction, edge.From, edge.ToOptions[0]);
-        return edge.ToOptions[0];
+        logger.LogDebug(
+            "Selection function '{Function}': no keyword match in output from '{From}' — no decision",
+            edge.SelectionFunction, edge.From);
+        return null;
     }
 
     /// <summary>First CamelCase token of an agent name, lowercased ("BillingSupportAgent" → "billing").</summary>
