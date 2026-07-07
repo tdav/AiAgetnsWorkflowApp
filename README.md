@@ -289,7 +289,12 @@ Pipeline A→B→C через `edges`. Выход одного агента → 
 }
 ```
 
-> **Замечание:** в текущей версии `aggregationStrategy` логируется, но фреймворк применяет агрегацию по умолчанию (`Collect`-эквивалент). Кастомные стратегии — в roadmap.
+> Поддерживаемые значения `aggregationStrategy`:
+> - `Collect` (по умолчанию) — стандартная агрегация SDK: последние сообщения всех участников;
+> - `Merge` — ответы всех участников склеиваются в одно сообщение с метками `ИмяАгента: текст`;
+> - `Vote` — побеждает самый частый ответ (сравнение текста без учёта регистра/пробелов, при ничьей — порядок участников).
+>
+> Неизвестное значение → `WorkflowValidationException`.
 
 ### 3. Conditional
 
@@ -470,7 +475,7 @@ dotnet test
 |--------|-----------|
 | Selection-функции в Conditional | ✅ Реализовано (`ISelectionFunction` + fallback `keywordMatch`) |
 | Tool bridging в Magentic | ✅ Реализовано (`AIFunction` → Kernel через `AsKernelFunction()`; hosted tools — нет) |
-| Кастомные `aggregationStrategy` в Concurrent | ❌ Не реализовано (игнорируется, используется default-коллектор) |
+| Кастомные `aggregationStrategy` в Concurrent | ✅ Реализовано (`Collect` / `Merge` / `Vote`) |
 | Azure OpenAI | ❌ Не поддерживается (`NotSupportedException`); только OpenAI и Ollama |
 | Токен-тримминг в SK/magentic-пути | ❌ Не применяется (ограничен `maxRoundCount` менеджера) |
 | Многократный `RegisterServersAsync` | ❌ Pool single-use per app lifetime |
