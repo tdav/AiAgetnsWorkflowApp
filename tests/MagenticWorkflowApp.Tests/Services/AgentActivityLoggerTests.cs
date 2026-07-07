@@ -1,15 +1,11 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Diagnostics.Metrics;
 using System.Linq;
-using MagenticWorkflowApp.Interfaces;
 using MagenticWorkflowApp.Models;
 using MagenticWorkflowApp.Services;
 using MagenticWorkflowApp.Tests.TestDoubles;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Xunit;
 
 namespace MagenticWorkflowApp.Tests.Services;
 
@@ -22,7 +18,7 @@ public class AgentActivityLoggerTests
         return (logger, writer);
     }
 
-    [Fact]
+    [Test]
     public void OnChunk_AccumulatesIntoBuffer_AndWritesToConsole()
     {
         var (logger, writer) = Build();
@@ -32,10 +28,10 @@ public class AgentActivityLoggerTests
         logger.OnChunk("Alice", "world");
         logger.OnTurnCompleted("Alice");
 
-        Assert.Contains("Hello world", writer.AllText);
+        writer.AllText.Should().Contain("Hello world");
     }
 
-    [Fact]
+    [Test]
     public void OnTurnCompleted_LogsOnceWithFullText()
     {
         var recorder = new RecordingLogger<AgentActivityLogger>();
@@ -50,11 +46,11 @@ public class AgentActivityLoggerTests
         var completedEntries = recorder.Entries
             .Where(e => e.Message.Contains("completed turn"))
             .ToList();
-        Assert.Single(completedEntries);
-        Assert.Contains("abcdef", completedEntries[0].FormattedMessage);
+        completedEntries.Should().ContainSingle();
+        completedEntries[0].FormattedMessage.Should().Contain("abcdef");
     }
 
-    [Fact]
+    [Test]
     public void OnTurnCompleted_WithExplicitText_PrefersExplicit()
     {
         var recorder = new RecordingLogger<AgentActivityLogger>();
@@ -67,11 +63,11 @@ public class AgentActivityLoggerTests
         var entries = recorder.Entries
             .Where(e => e.Message.Contains("completed turn"))
             .ToList();
-        Assert.Single(entries);
-        Assert.Contains("explicit-text", entries[0].FormattedMessage);
+        entries.Should().ContainSingle();
+        entries[0].FormattedMessage.Should().Contain("explicit-text");
     }
 
-    [Fact]
+    [Test]
     public void OnToolCall_LogsAndWritesToConsole()
     {
         var recorder = new RecordingLogger<AgentActivityLogger>();
@@ -80,13 +76,13 @@ public class AgentActivityLoggerTests
 
         logger.OnToolCall("Alice", "GetWeather", "{ \"city\":\"Paris\" }");
 
-        Assert.Contains(recorder.Entries, e =>
+        recorder.Entries.Should().Contain(e =>
             e.FormattedMessage.Contains("Alice") &&
             e.FormattedMessage.Contains("GetWeather"));
-        Assert.Contains("GetWeather", writer.AllText);
+        writer.AllText.Should().Contain("GetWeather");
     }
 
-    [Fact]
+    [Test]
     public void OnManagerDecision_LogsAndWritesToConsole()
     {
         var recorder = new RecordingLogger<AgentActivityLogger>();
@@ -95,13 +91,13 @@ public class AgentActivityLoggerTests
 
         logger.OnManagerDecision("Manager-1", "Selecting agent Bob");
 
-        Assert.Contains(recorder.Entries, e =>
+        recorder.Entries.Should().Contain(e =>
             e.FormattedMessage.Contains("Manager-1") &&
             e.FormattedMessage.Contains("Selecting agent Bob"));
-        Assert.Contains("DECISION", writer.AllText);
+        writer.AllText.Should().Contain("DECISION");
     }
 
-    [Fact]
+    [Test]
     public void OnExecutorFailed_LogsError_AndFlushesPending()
     {
         var recorder = new RecordingLogger<AgentActivityLogger>();
@@ -112,16 +108,16 @@ public class AgentActivityLoggerTests
         logger.OnChunk("Alice", "in-progress text");
         logger.OnExecutorFailed("Alice", new InvalidOperationException("boom"));
 
-        Assert.Contains(recorder.Entries, e =>
+        recorder.Entries.Should().Contain(e =>
             e.Level == LogLevel.Error &&
             e.FormattedMessage.Contains("Alice"));
-        Assert.Contains(recorder.Entries, e =>
+        recorder.Entries.Should().Contain(e =>
             e.Level == LogLevel.Warning &&
             e.FormattedMessage.Contains("Pending turn") &&
             e.FormattedMessage.Contains("aborted"));
     }
 
-    [Fact]
+    [Test]
     public void OnWorkflowError_LogsError_AndFlushesAllPending()
     {
         var recorder = new RecordingLogger<AgentActivityLogger>();
@@ -136,10 +132,10 @@ public class AgentActivityLoggerTests
         var pending = recorder.Entries
             .Where(e => e.FormattedMessage.Contains("Pending turn"))
             .ToList();
-        Assert.Equal(2, pending.Count);
+        pending.Should().HaveCount(2);
     }
 
-    [Fact]
+    [Test]
     public void OnWorkflowOutput_LogsAndWritesFinalResult()
     {
         var recorder = new RecordingLogger<AgentActivityLogger>();
@@ -148,13 +144,14 @@ public class AgentActivityLoggerTests
 
         logger.OnWorkflowOutput("final-answer");
 
-        Assert.Contains(recorder.Entries, e =>
+        recorder.Entries.Should().Contain(e =>
             e.FormattedMessage.Contains("Workflow output") &&
             e.FormattedMessage.Contains("final-answer"));
-        Assert.Contains("final-answer", writer.AllText);
+        writer.AllText.Should().Contain("final-answer");
     }
 
-    [Fact]
+    [Test]
+    [NotInParallel] // global ActivityListener would capture spans from concurrently running tests
     public void OnTurnCompleted_StartsAndStopsActivity_WithTags()
     {
         var stopped = new List<System.Diagnostics.Activity>();
@@ -174,13 +171,16 @@ public class AgentActivityLoggerTests
         logger.OnChunk("Alice", "def");
         logger.OnTurnCompleted("Alice");
 
-        var span = Assert.Single(stopped, a => a.OperationName.StartsWith("agent.turn."));
-        Assert.Equal("agent.turn.Alice", span.OperationName);
-        Assert.Contains(span.TagObjects, t => t.Key == "chunks" && t.Value is int n && n == 2);
-        Assert.Contains(span.TagObjects, t => t.Key == "text.length" && t.Value is int len && len == 6);
+        var span = stopped
+            .Should().ContainSingle(a => a.OperationName.StartsWith("agent.turn."))
+            .Which;
+        span.OperationName.Should().Be("agent.turn.Alice");
+        span.TagObjects.Any(t => t.Key == "chunks" && t.Value is int n && n == 2).Should().BeTrue();
+        span.TagObjects.Any(t => t.Key == "text.length" && t.Value is int len && len == 6).Should().BeTrue();
     }
 
-    [Fact]
+    [Test]
+    [NotInParallel] // global MeterListener would capture measurements from concurrently running tests
     public void OnTurnCompleted_RecordsMetrics()
     {
         var counterValues = new List<long>();
@@ -201,11 +201,11 @@ public class AgentActivityLoggerTests
         logger.OnChunk("Alice", "abc");
         logger.OnTurnCompleted("Alice");
 
-        Assert.Equal(1, counterValues.Sum());
-        Assert.Single(histogramValues);
+        counterValues.Sum().Should().Be(1);
+        histogramValues.Should().ContainSingle();
     }
 
-    [Fact]
+    [Test]
     public void Concurrent_TwoAgents_IndependentBuffers_AndPrefixedConsole()
     {
         var recorder = new RecordingLogger<AgentActivityLogger>();
@@ -222,10 +222,10 @@ public class AgentActivityLoggerTests
         var completed = recorder.Entries
             .Where(e => e.FormattedMessage.Contains("completed turn"))
             .ToList();
-        Assert.Equal(2, completed.Count);
-        Assert.Contains(completed, e => e.FormattedMessage.Contains("AAAAAA2"));
-        Assert.Contains(completed, e => e.FormattedMessage.Contains("BBB"));
-        Assert.Contains("[Alice] AAA", writer.AllText);
-        Assert.Contains("[Bob] BBB", writer.AllText);
+        completed.Should().HaveCount(2);
+        completed.Should().Contain(e => e.FormattedMessage.Contains("AAAAAA2"));
+        completed.Should().Contain(e => e.FormattedMessage.Contains("BBB"));
+        writer.AllText.Should().Contain("[Alice] AAA");
+        writer.AllText.Should().Contain("[Bob] BBB");
     }
 }

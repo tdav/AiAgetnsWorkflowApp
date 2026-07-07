@@ -8,14 +8,24 @@ public sealed class FakeChatClient : IChatClient
     public IEnumerable<ChatMessage>? LastMessages { get; private set; }
     public ChatOptions? LastOptions { get; private set; }
 
+    /// <summary>Every request received via GetResponseAsync, in order.</summary>
+    public List<IReadOnlyList<ChatMessage>> Requests { get; } = new();
+
+    public int CallCount => Requests.Count;
+
+    /// <summary>Canned assistant reply text.</summary>
+    public string ResponseText { get; set; } = "ok";
+
     public Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages,
         ChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        LastMessages = messages;
+        var snapshot = messages.ToList();
+        LastMessages = snapshot;
         LastOptions = options;
-        return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "ok")));
+        Requests.Add(snapshot);
+        return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, ResponseText)));
     }
 
     public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(

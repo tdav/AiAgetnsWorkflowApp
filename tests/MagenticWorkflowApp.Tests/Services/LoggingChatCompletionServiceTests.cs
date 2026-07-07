@@ -6,7 +6,6 @@ using MagenticWorkflowApp.Services;
 using MagenticWorkflowApp.Tests.TestDoubles;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
-using Xunit;
 
 namespace MagenticWorkflowApp.Tests.Services;
 
@@ -21,7 +20,7 @@ public class LoggingChatCompletionServiceTests
         return (sut, inner, activity);
     }
 
-    [Fact]
+    [Test]
     public async Task NonStreaming_StripReasoning_RemovesThinkBlockFromContent()
     {
         var (sut, inner, activity) = CreateSut("AgentX", stripReasoning: true);
@@ -32,12 +31,12 @@ public class LoggingChatCompletionServiceTests
 
         var result = await sut.GetChatMessageContentsAsync(new ChatHistory());
 
-        Assert.Equal("before  after", result[0].Content);
+        result[0].Content.Should().Be("before  after");
         var completed = activity.Calls.Single(c => c.Method == "OnTurnCompleted");
-        Assert.Equal("before  after", completed.Arg2);
+        completed.Arg2.Should().Be("before  after");
     }
 
-    [Fact]
+    [Test]
     public async Task NonStreaming_StripReasoning_RemovesGemmaPipeThinkBlock()
     {
         var (sut, inner, activity) = CreateSut("AgentX", stripReasoning: true);
@@ -48,10 +47,10 @@ public class LoggingChatCompletionServiceTests
 
         var result = await sut.GetChatMessageContentsAsync(new ChatHistory());
 
-        Assert.Equal("answer  done", result[0].Content);
+        result[0].Content.Should().Be("answer  done");
     }
 
-    [Fact]
+    [Test]
     public async Task NonStreaming_StripDisabled_KeepsReasoningIntact()
     {
         var (sut, inner, _) = CreateSut("AgentX", stripReasoning: false);
@@ -62,10 +61,10 @@ public class LoggingChatCompletionServiceTests
 
         var result = await sut.GetChatMessageContentsAsync(new ChatHistory());
 
-        Assert.Equal("x <think>y</think> z", result[0].Content);
+        result[0].Content.Should().Be("x <think>y</think> z");
     }
 
-    [Fact]
+    [Test]
     public async Task Streaming_StripReasoning_OmitsTokensInsideThinkBlockEvenAcrossDeltas()
     {
         var (sut, inner, activity) = CreateSut("AgentX", stripReasoning: true);
@@ -83,14 +82,14 @@ public class LoggingChatCompletionServiceTests
             if (!string.IsNullOrEmpty(d.Content)) collected.Append(d.Content);
         }
 
-        Assert.Equal("Hi  bye", collected.ToString());
+        collected.ToString().Should().Be("Hi  bye");
         var chunks = activity.Calls.Where(c => c.Method == "OnChunk").Select(c => c.Arg2).ToArray();
-        Assert.Equal("Hi  bye", string.Concat(chunks));
-        Assert.DoesNotContain(chunks, c => (c ?? string.Empty).Contains("internal", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(chunks, c => (c ?? string.Empty).Contains("reasoning", StringComparison.OrdinalIgnoreCase));
+        string.Concat(chunks).Should().Be("Hi  bye");
+        chunks.Should().NotContain(c => (c ?? string.Empty).Contains("internal", StringComparison.OrdinalIgnoreCase));
+        chunks.Should().NotContain(c => (c ?? string.Empty).Contains("reasoning", StringComparison.OrdinalIgnoreCase));
     }
 
-    [Fact]
+    [Test]
     public async Task Streaming_ManagerWithStrip_OnManagerDecisionExcludesReasoning()
     {
         var (sut, inner, activity) = CreateSut("Manager", stripReasoning: true);
@@ -104,10 +103,10 @@ public class LoggingChatCompletionServiceTests
         await foreach (var _ in sut.GetStreamingChatMessageContentsAsync(new ChatHistory())) { }
 
         var decision = activity.Calls.Single(c => c.Method == "OnManagerDecision");
-        Assert.Equal("{\"plan\":\"X\"}", decision.Arg2);
+        decision.Arg2.Should().Be("{\"plan\":\"X\"}");
     }
 
-    [Fact]
+    [Test]
     public async Task NonStreaming_Success_EmitsTurnStartedAndCompleted()
     {
         var (sut, inner, activity) = CreateSut("AgentX");
@@ -118,19 +117,19 @@ public class LoggingChatCompletionServiceTests
 
         var result = await sut.GetChatMessageContentsAsync(new ChatHistory());
 
-        Assert.Single(result);
-        Assert.Equal("hello", result[0].Content);
-        Assert.Equal(1, inner.NonStreamingCallCount);
+        result.Should().ContainSingle();
+        result[0].Content.Should().Be("hello");
+        inner.NonStreamingCallCount.Should().Be(1);
 
-        Assert.Collection(activity.Calls,
-            c => Assert.Equal(("OnTurnStarted", "AgentX", null), (c.Method, c.Arg1, c.Arg2)),
-            c => Assert.Equal(("OnTurnCompleted", "AgentX", "hello"), (c.Method, c.Arg1, c.Arg2)));
+        activity.Calls.Should().SatisfyRespectively(
+            c => (c.Method, c.Arg1, c.Arg2).Should().Be(("OnTurnStarted", "AgentX", (string?)null)),
+            c => (c.Method, c.Arg1, c.Arg2).Should().Be(("OnTurnCompleted", "AgentX", "hello")));
 
-        Assert.DoesNotContain(activity.Calls, c => c.Method == "OnManagerDecision");
-        Assert.DoesNotContain(activity.Calls, c => c.Method == "OnExecutorFailed");
+        activity.Calls.Should().NotContain(c => c.Method == "OnManagerDecision");
+        activity.Calls.Should().NotContain(c => c.Method == "OnExecutorFailed");
     }
 
-    [Fact]
+    [Test]
     public async Task NonStreaming_ManagerRole_EmitsOnManagerDecisionInsteadOfTurnCompleted()
     {
         var (sut, inner, activity) = CreateSut("Manager");
@@ -141,47 +140,46 @@ public class LoggingChatCompletionServiceTests
 
         await sut.GetChatMessageContentsAsync(new ChatHistory());
 
-        Assert.Collection(activity.Calls,
-            c => Assert.Equal(("OnTurnStarted", "Manager"), (c.Method, c.Arg1)),
-            c => Assert.Equal(("OnManagerDecision", "Manager", "{ \"plan\": \"do X\" }"), (c.Method, c.Arg1, c.Arg2)));
-        Assert.DoesNotContain(activity.Calls, c => c.Method == "OnTurnCompleted");
+        activity.Calls.Should().SatisfyRespectively(
+            c => (c.Method, c.Arg1).Should().Be(("OnTurnStarted", "Manager")),
+            c => (c.Method, c.Arg1, c.Arg2).Should().Be(("OnManagerDecision", "Manager", "{ \"plan\": \"do X\" }")));
+        activity.Calls.Should().NotContain(c => c.Method == "OnTurnCompleted");
     }
 
-    [Fact]
+    [Test]
     public async Task NonStreaming_InnerThrows_EmitsOnExecutorFailedAndRethrows()
     {
         var (sut, inner, activity) = CreateSut("AgentX");
         var ex = new InvalidOperationException("boom");
         inner.ThrowOnNonStreaming = ex;
 
-        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => sut.GetChatMessageContentsAsync(new ChatHistory()));
-        Assert.Same(ex, thrown);
+        var act = () => sut.GetChatMessageContentsAsync(new ChatHistory());
+        var thrown = (await act.Should().ThrowAsync<InvalidOperationException>()).Which;
+        thrown.Should().BeSameAs(ex);
 
-        Assert.Collection(activity.Calls,
-            c => Assert.Equal(("OnTurnStarted", "AgentX"), (c.Method, c.Arg1)),
-            c => Assert.Equal(("OnExecutorFailed", "AgentX"), (c.Method, c.Arg1)));
-        var failedCall = activity.Calls.Last();
-        Assert.Same(ex, failedCall.Ex);
-        Assert.DoesNotContain(activity.Calls, c => c.Method == "OnTurnCompleted");
-        Assert.DoesNotContain(activity.Calls, c => c.Method == "OnManagerDecision");
+        activity.Calls.Should().SatisfyRespectively(
+            c => (c.Method, c.Arg1).Should().Be(("OnTurnStarted", "AgentX")),
+            c => (c.Method, c.Arg1).Should().Be(("OnExecutorFailed", "AgentX")));
+        activity.Calls.Last().Ex.Should().BeSameAs(ex);
+        activity.Calls.Should().NotContain(c => c.Method == "OnTurnCompleted");
+        activity.Calls.Should().NotContain(c => c.Method == "OnManagerDecision");
     }
 
-    [Fact]
+    [Test]
     public async Task NonStreaming_OperationCanceled_NoExecutorFailedEmission()
     {
         var (sut, inner, activity) = CreateSut("AgentX");
         inner.ThrowOnNonStreaming = new OperationCanceledException();
 
-        await Assert.ThrowsAsync<OperationCanceledException>(
-            () => sut.GetChatMessageContentsAsync(new ChatHistory()));
+        var act = () => sut.GetChatMessageContentsAsync(new ChatHistory());
+        await act.Should().ThrowAsync<OperationCanceledException>();
 
-        Assert.Single(activity.Calls, c => c.Method == "OnTurnStarted" && c.Arg1 == "AgentX");
-        Assert.DoesNotContain(activity.Calls, c => c.Method == "OnExecutorFailed");
-        Assert.DoesNotContain(activity.Calls, c => c.Method == "OnTurnCompleted");
+        activity.Calls.Should().ContainSingle(c => c.Method == "OnTurnStarted" && c.Arg1 == "AgentX");
+        activity.Calls.Should().NotContain(c => c.Method == "OnExecutorFailed");
+        activity.Calls.Should().NotContain(c => c.Method == "OnTurnCompleted");
     }
 
-    [Fact]
+    [Test]
     public async Task Streaming_Success_EmitsChunkPerDeltaAndTurnCompletedAtEnd()
     {
         var (sut, inner, activity) = CreateSut("AgentX");
@@ -198,18 +196,18 @@ public class LoggingChatCompletionServiceTests
             collected.Add(d.Content);
         }
 
-        Assert.Equal(new[] { "Hel", "lo ", "world" }, collected);
-        Assert.Equal(1, inner.StreamingCallCount);
+        collected.Should().Equal("Hel", "lo ", "world");
+        inner.StreamingCallCount.Should().Be(1);
 
-        Assert.Collection(activity.Calls,
-            c => Assert.Equal(("OnTurnStarted", "AgentX"), (c.Method, c.Arg1)),
-            c => Assert.Equal(("OnChunk", "AgentX", "Hel"), (c.Method, c.Arg1, c.Arg2)),
-            c => Assert.Equal(("OnChunk", "AgentX", "lo "), (c.Method, c.Arg1, c.Arg2)),
-            c => Assert.Equal(("OnChunk", "AgentX", "world"), (c.Method, c.Arg1, c.Arg2)),
-            c => Assert.Equal(("OnTurnCompleted", "AgentX", null), (c.Method, c.Arg1, c.Arg2)));
+        activity.Calls.Should().SatisfyRespectively(
+            c => (c.Method, c.Arg1).Should().Be(("OnTurnStarted", "AgentX")),
+            c => (c.Method, c.Arg1, c.Arg2).Should().Be(("OnChunk", "AgentX", "Hel")),
+            c => (c.Method, c.Arg1, c.Arg2).Should().Be(("OnChunk", "AgentX", "lo ")),
+            c => (c.Method, c.Arg1, c.Arg2).Should().Be(("OnChunk", "AgentX", "world")),
+            c => (c.Method, c.Arg1, c.Arg2).Should().Be(("OnTurnCompleted", "AgentX", (string?)null)));
     }
 
-    [Fact]
+    [Test]
     public async Task Streaming_ManagerRole_BuffersChunksAndEmitsOnManagerDecisionAtEnd()
     {
         var (sut, inner, activity) = CreateSut("Manager");
@@ -225,15 +223,15 @@ public class LoggingChatCompletionServiceTests
             collected.Add(d.Content);
         }
 
-        Assert.Equal(new[] { "{\"step\":", "1}" }, collected);
-        Assert.DoesNotContain(activity.Calls, c => c.Method == "OnChunk");
-        Assert.DoesNotContain(activity.Calls, c => c.Method == "OnTurnCompleted");
-        Assert.Collection(activity.Calls,
-            c => Assert.Equal(("OnTurnStarted", "Manager"), (c.Method, c.Arg1)),
-            c => Assert.Equal(("OnManagerDecision", "Manager", "{\"step\":1}"), (c.Method, c.Arg1, c.Arg2)));
+        collected.Should().Equal("{\"step\":", "1}");
+        activity.Calls.Should().NotContain(c => c.Method == "OnChunk");
+        activity.Calls.Should().NotContain(c => c.Method == "OnTurnCompleted");
+        activity.Calls.Should().SatisfyRespectively(
+            c => (c.Method, c.Arg1).Should().Be(("OnTurnStarted", "Manager")),
+            c => (c.Method, c.Arg1, c.Arg2).Should().Be(("OnManagerDecision", "Manager", "{\"step\":1}")));
     }
 
-    [Fact]
+    [Test]
     public async Task Streaming_InnerThrowsMidStream_EmitsTwoChunksThenExecutorFailed()
     {
         var (sut, inner, activity) = CreateSut("AgentX");
@@ -248,26 +246,27 @@ public class LoggingChatCompletionServiceTests
         inner.StreamingException = ex;
 
         var collected = new List<string?>();
-        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        Func<Task> act = async () =>
         {
             await foreach (var d in sut.GetStreamingChatMessageContentsAsync(new ChatHistory()))
             {
                 collected.Add(d.Content);
             }
-        });
-        Assert.Same(ex, thrown);
-        Assert.Equal(new[] { "first", "second" }, collected);
+        };
+        var thrown = (await act.Should().ThrowAsync<InvalidOperationException>()).Which;
+        thrown.Should().BeSameAs(ex);
+        collected.Should().Equal("first", "second");
 
-        Assert.Collection(activity.Calls,
-            c => Assert.Equal(("OnTurnStarted", "AgentX"), (c.Method, c.Arg1)),
-            c => Assert.Equal(("OnChunk", "AgentX", "first"), (c.Method, c.Arg1, c.Arg2)),
-            c => Assert.Equal(("OnChunk", "AgentX", "second"), (c.Method, c.Arg1, c.Arg2)),
-            c => Assert.Equal(("OnExecutorFailed", "AgentX"), (c.Method, c.Arg1)));
-        Assert.Same(ex, activity.Calls.Last().Ex);
-        Assert.DoesNotContain(activity.Calls, c => c.Method == "OnTurnCompleted");
+        activity.Calls.Should().SatisfyRespectively(
+            c => (c.Method, c.Arg1).Should().Be(("OnTurnStarted", "AgentX")),
+            c => (c.Method, c.Arg1, c.Arg2).Should().Be(("OnChunk", "AgentX", "first")),
+            c => (c.Method, c.Arg1, c.Arg2).Should().Be(("OnChunk", "AgentX", "second")),
+            c => (c.Method, c.Arg1).Should().Be(("OnExecutorFailed", "AgentX")));
+        activity.Calls.Last().Ex.Should().BeSameAs(ex);
+        activity.Calls.Should().NotContain(c => c.Method == "OnTurnCompleted");
     }
 
-    [Fact]
+    [Test]
     public async Task NonStreaming_LongText_TruncatesEmittedDisplayButReturnsFullToCaller()
     {
         var (sut, inner, activity) = CreateSut("AgentX");
@@ -279,20 +278,20 @@ public class LoggingChatCompletionServiceTests
 
         var result = await sut.GetChatMessageContentsAsync(new ChatHistory());
 
-        Assert.Equal(longText, result[0].Content);
-        Assert.Equal(5000, result[0].Content!.Length);
+        result[0].Content.Should().Be(longText);
+        result[0].Content!.Length.Should().Be(5000);
 
         var expectedDisplay = new string('x', LoggingChatCompletionService.TextTruncationLimit)
             + LoggingChatCompletionService.TruncationSuffix;
         var completedCall = activity.Calls.Single(c => c.Method == "OnTurnCompleted");
-        Assert.Equal("AgentX", completedCall.Arg1);
-        Assert.Equal(expectedDisplay, completedCall.Arg2);
+        completedCall.Arg1.Should().Be("AgentX");
+        completedCall.Arg2.Should().Be(expectedDisplay);
     }
 
-    [Fact]
+    [Test]
     public void Attributes_ReturnsInnerReference()
     {
         var (sut, inner, _) = CreateSut("AgentX");
-        Assert.Same(inner.Attributes, sut.Attributes);
+        sut.Attributes.Should().BeSameAs(inner.Attributes);
     }
 }

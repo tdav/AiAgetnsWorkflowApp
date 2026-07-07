@@ -6,7 +6,7 @@ namespace AiAgetnsWorkflow.Tests.Plugins;
 
 public class AgentPluginRegistryTests
 {
-    [Fact]
+    [Test]
     public void TryGet_KnownName_ReturnsTrueAndPlugin()
     {
         IAgentPlugin a = new FakeAgentPlugin("A");
@@ -15,7 +15,7 @@ public class AgentPluginRegistryTests
         found.Should().BeSameAs(a);
     }
 
-    [Fact]
+    [Test]
     public void TryGet_UnknownName_ReturnsFalse()
     {
         var reg = new AgentPluginRegistry(Array.Empty<IAgentPlugin>());
@@ -23,14 +23,14 @@ public class AgentPluginRegistryTests
         found.Should().BeNull();
     }
 
-    [Fact]
+    [Test]
     public void RegisteredNames_ReturnsAll()
     {
         var reg = new AgentPluginRegistry(new IAgentPlugin[] { new FakeAgentPlugin("A"), new FakeAgentPlugin("B") });
         reg.RegisteredNames.Should().BeEquivalentTo(new[] { "A", "B" });
     }
 
-    [Fact]
+    [Test]
     public void Constructor_DuplicateName_Throws()
     {
         var act = () => new AgentPluginRegistry(new IAgentPlugin[] { new FakeAgentPlugin("A"), new FakeAgentPlugin("A") });

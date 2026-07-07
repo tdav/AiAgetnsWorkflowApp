@@ -3,39 +3,53 @@ using MagenticWorkflowApp.Services;
 
 namespace AiAgetnsWorkflow.Tests.Loader;
 
-public class EnvVarSubstitutionTests : IDisposable
+// Env vars are process-global and TUnit runs tests in parallel,
+// so every test uses its own variable name.
+public class EnvVarSubstitutionTests
 {
-    private const string TestVar = "AIAGENTS_TEST_VAR_X";
-
-    public void Dispose() => Environment.SetEnvironmentVariable(TestVar, null);
-
-    [Fact]
+    [Test]
     public void Apply_NoPlaceholders_ReturnsInputUnchanged()
     {
         EnvVarSubstitution.Apply("plain string").Should().Be("plain string");
     }
 
-    [Fact]
+    [Test]
     public void Apply_SinglePlaceholder_SubstitutesValue()
     {
-        Environment.SetEnvironmentVariable(TestVar, "secret");
-        EnvVarSubstitution.Apply($"Bearer ${{{TestVar}}}").Should().Be("Bearer secret");
+        const string testVar = "AIAGENTS_TEST_VAR_SINGLE";
+        try
+        {
+            Environment.SetEnvironmentVariable(testVar, "secret");
+            EnvVarSubstitution.Apply($"Bearer ${{{testVar}}}").Should().Be("Bearer secret");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(testVar, null);
+        }
     }
 
-    [Fact]
+    [Test]
     public void Apply_MultiplePlaceholders_SubstitutesAll()
     {
-        Environment.SetEnvironmentVariable(TestVar, "X");
-        EnvVarSubstitution.Apply($"${{{TestVar}}}-${{{TestVar}}}").Should().Be("X-X");
+        const string testVar = "AIAGENTS_TEST_VAR_MULTI";
+        try
+        {
+            Environment.SetEnvironmentVariable(testVar, "X");
+            EnvVarSubstitution.Apply($"${{{testVar}}}-${{{testVar}}}").Should().Be("X-X");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(testVar, null);
+        }
     }
 
-    [Fact]
+    [Test]
     public void Apply_LowerCaseVariable_DoesNotSubstitute()
     {
         EnvVarSubstitution.Apply("${lower_case}").Should().Be("${lower_case}");
     }
 
-    [Fact]
+    [Test]
     public void Apply_MissingVariable_ThrowsWithVarName()
     {
         var act = () => EnvVarSubstitution.Apply("${THIS_VAR_DOES_NOT_EXIST_XYZ_42}");

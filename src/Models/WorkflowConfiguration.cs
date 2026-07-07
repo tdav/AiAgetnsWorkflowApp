@@ -13,4 +13,7 @@ public class WorkflowConfiguration
     public Dictionary<string, string> Settings { get; set; } = new();
     public List<McpServerConfiguration> McpServers { get; set; } = new();
     public DeepResearchConfiguration? DeepResearch { get; set; }
+
+    /// <summary>Optional per-workflow token/context budget; null falls back to the "ContextBudget" appsettings section.</summary>
+    public ContextBudgetConfiguration? ContextBudget { get; set; }
 }

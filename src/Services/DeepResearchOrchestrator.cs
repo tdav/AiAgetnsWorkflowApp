@@ -54,6 +54,7 @@ public sealed class DeepResearchOrchestrator : IDeepResearchOrchestrator
         }
 
         var dr = config.DeepResearch;
+        var budget = config.ContextBudget ?? new ContextBudgetConfiguration();
         _activity.SetWorkflowMode(WorkflowDisplayMode.Sequential);
 
         Directory.CreateDirectory(dr.SessionsDir);
@@ -71,18 +72,15 @@ public sealed class DeepResearchOrchestrator : IDeepResearchOrchestrator
 
         // Build the four persistent role agents up-front. Researcher agents
         // are spawned ad-hoc per sub-question and don't share a session.
+        // ChatReducerWindow bounds each persistent role session via the trimming middleware.
         var clarifier = _factory.BuildAgent(
-            dr.Clarifier.Name, dr.Clarifier.Instructions, dr.Clarifier.ModelId,
-            tools: clarifierTools, enableThinking: dr.Clarifier.EnableThinking);
+            dr.Clarifier, tools: clarifierTools, historyWindowOverride: dr.ChatReducerWindow);
         var planner = _factory.BuildAgent(
-            dr.Planner.Name, dr.Planner.Instructions, dr.Planner.ModelId,
-            tools: null, enableThinking: dr.Planner.EnableThinking);
+            dr.Planner, historyWindowOverride: dr.ChatReducerWindow);
         var critic = _factory.BuildAgent(
-            dr.Critic.Name, dr.Critic.Instructions, dr.Critic.ModelId,
-            tools: null, enableThinking: dr.Critic.EnableThinking);
+            dr.Critic, historyWindowOverride: dr.ChatReducerWindow);
         var synthesizer = _factory.BuildAgent(
-            dr.Synthesizer.Name, dr.Synthesizer.Instructions, dr.Synthesizer.ModelId,
-            tools: null, enableThinking: dr.Synthesizer.EnableThinking);
+            dr.Synthesizer, historyWindowOverride: dr.ChatReducerWindow);
 
         var envelope = await LoadEnvelopeAsync(sessionPath, cancellationToken).ConfigureAwait(false);
 
@@ -124,10 +122,13 @@ public sealed class DeepResearchOrchestrator : IDeepResearchOrchestrator
                 dr.Researcher, researcherTools, currentItems,
                 dr.MaxParallelResearchers, cancellationToken).ConfigureAwait(false);
 
+            // Critic sees only this iteration's findings in full; earlier iterations are
+            // compressed into a one-line-per-finding digest to keep the prompt bounded.
+            var previousDigest = BuildFindingsDigest(allFindings);
             allFindings.AddRange(iterFindings);
 
             lastCriticReport = await RunCriticAsync(
-                critic, criticSession, allFindings, cancellationToken).ConfigureAwait(false);
+                critic, criticSession, iterFindings, previousDigest, cancellationToken).ConfigureAwait(false);
 
             if (CriticIsDone(lastCriticReport))
             {
@@ -150,7 +151,7 @@ public sealed class DeepResearchOrchestrator : IDeepResearchOrchestrator
 
         // 5. Synthesizer
         var report = await RunSynthesizerAsync(
-            synthesizer, synthSession, refinedTopic, allFindings, lastCriticReport, cancellationToken).ConfigureAwait(false);
+            synthesizer, synthSession, refinedTopic, allFindings, lastCriticReport, budget, cancellationToken).ConfigureAwait(false);
 
         // Persist outputs.
         var reportPath = Path.Combine(dr.ReportsDir, $"research-{sessionId}.md");
@@ -328,11 +329,9 @@ public sealed class DeepResearchOrchestrator : IDeepResearchOrchestrator
             {
                 var slug = Slug(item.SubQuestion);
                 var researcher = _factory.BuildAgent(
-                    name: $"{template.Name}-{slug}",
-                    instructions: template.Instructions,
-                    modelId: template.ModelId,
+                    template,
                     tools: tools,
-                    enableThinking: template.EnableThinking);
+                    nameOverride: $"{template.Name}-{slug}");
 
                 _activity.OnTurnStarted(researcher.Name ?? "Researcher");
                 var session = await researcher.CreateSessionAsync(cancellationToken: token).ConfigureAwait(false);
@@ -372,7 +371,8 @@ public sealed class DeepResearchOrchestrator : IDeepResearchOrchestrator
     }
 
     private async Task<string> RunCriticAsync(
-        AIAgent critic, AgentSession session, IReadOnlyList<ResearchFinding> findings, CancellationToken ct)
+        AIAgent critic, AgentSession session, IReadOnlyList<ResearchFinding> newFindings,
+        string previousDigest, CancellationToken ct)
     {
         Console.WriteLine();
         Console.ForegroundColor = ConsoleColor.Magenta;
@@ -384,7 +384,10 @@ public sealed class DeepResearchOrchestrator : IDeepResearchOrchestrator
             "If the score is >= 8, reply ONLY with the literal string \"OK\". " +
             "Otherwise reply ONLY with a JSON array of {subQuestion, searchHints} objects " +
             "describing the gaps that should be researched in the next iteration." +
-            "\n\nFINDINGS:\n" + JsonSerializer.Serialize(findings, EnvelopeJsonOptions);
+            (string.IsNullOrEmpty(previousDigest)
+                ? string.Empty
+                : "\n\nPREVIOUSLY_RESEARCHED (digest, one line per finding):\n" + previousDigest) +
+            "\n\nNEW_FINDINGS (this iteration):\n" + JsonSerializer.Serialize(newFindings, EnvelopeJsonOptions);
 
         _activity.OnTurnStarted(critic.Name ?? "Critic");
         var resp = await critic.RunAsync(prompt, session, cancellationToken: ct).ConfigureAwait(false);
@@ -399,19 +402,36 @@ public sealed class DeepResearchOrchestrator : IDeepResearchOrchestrator
 
     private async Task<string> RunSynthesizerAsync(
         AIAgent synthesizer, AgentSession session, string refinedTopic,
-        IReadOnlyList<ResearchFinding> findings, string criticReport, CancellationToken ct)
+        IReadOnlyList<ResearchFinding> findings, string criticReport,
+        ContextBudgetConfiguration budget, CancellationToken ct)
     {
         Console.WriteLine();
         Console.ForegroundColor = ConsoleColor.Magenta;
         Console.WriteLine("── Stage 5/5: Synthesizer ──");
         Console.ResetColor();
 
+        // Budget-based selection: newest findings first, up to ~60% of the input budget;
+        // the rest is represented by a one-line digest so the report can still mention it.
+        var selected = SelectFindingsWithinBudget(findings, budget, out var omitted);
+        if (omitted.Count > 0)
+        {
+            _logger.LogWarning(
+                "Synthesizer input over budget: {Omitted} of {Total} findings compressed to a digest",
+                omitted.Count, findings.Count);
+        }
+
         var sb = new StringBuilder();
         sb.AppendLine("TOPIC: " + refinedTopic);
         sb.AppendLine();
         sb.AppendLine("FINDINGS (JSON):");
-        sb.AppendLine(JsonSerializer.Serialize(findings, EnvelopeJsonOptions));
+        sb.AppendLine(JsonSerializer.Serialize(selected, EnvelopeJsonOptions));
         sb.AppendLine();
+        if (omitted.Count > 0)
+        {
+            sb.AppendLine("OMITTED_FINDINGS_DIGEST (one line each, full text did not fit the budget):");
+            sb.AppendLine(BuildFindingsDigest(omitted));
+            sb.AppendLine();
+        }
         if (!string.IsNullOrWhiteSpace(criticReport))
         {
             sb.AppendLine("CRITIC_REPORT:");
@@ -628,6 +648,52 @@ public sealed class DeepResearchOrchestrator : IDeepResearchOrchestrator
 
     private static string Truncate(string s, int maxLength)
         => string.IsNullOrEmpty(s) || s.Length <= maxLength ? s ?? string.Empty : s.Substring(0, maxLength) + "…";
+
+    /// <summary>One line per finding: sub-question, source count, summary head.</summary>
+    internal static string BuildFindingsDigest(IReadOnlyList<ResearchFinding> findings)
+    {
+        if (findings.Count == 0) return string.Empty;
+        var sb = new StringBuilder();
+        foreach (var f in findings)
+        {
+            sb.Append("- ").Append(f.SubQuestion)
+              .Append(" (").Append(f.Sources.Count).Append(" sources): ")
+              .AppendLine(Truncate(f.Summary.ReplaceLineEndings(" "), 120));
+        }
+        return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>
+    /// Keeps the newest findings whose serialized size fits ~60% of MaxInputTokens;
+    /// older overflow goes to <paramref name="omitted"/> (original order preserved in both).
+    /// </summary>
+    internal static List<ResearchFinding> SelectFindingsWithinBudget(
+        IReadOnlyList<ResearchFinding> findings,
+        ContextBudgetConfiguration budget,
+        out List<ResearchFinding> omitted)
+    {
+        var limit = (int)(budget.MaxInputTokens * 0.6);
+        var selected = new List<ResearchFinding>();
+        omitted = new List<ResearchFinding>();
+
+        var used = 0;
+        for (var i = findings.Count - 1; i >= 0; i--)
+        {
+            var cost = TokenEstimator.Estimate(
+                JsonSerializer.Serialize(findings[i], EnvelopeJsonOptions), budget.CharsPerToken);
+            if (selected.Count > 0 && used + cost > limit)
+            {
+                omitted.Add(findings[i]);
+                continue;
+            }
+            selected.Add(findings[i]);
+            used += cost;
+        }
+
+        selected.Reverse();
+        omitted.Reverse();
+        return selected;
+    }
 
     private static Task<string?> ReadLineAsync(CancellationToken ct)
     {

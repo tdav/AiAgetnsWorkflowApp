@@ -28,19 +28,6 @@ internal static class Program
             .ReadFrom.Configuration(configuration)            
             .CreateLogger();
 
-        //var teeFileLogger = new LoggerConfiguration()
-        //    .MinimumLevel.Verbose()
-        //    .Enrich.FromLogContext()
-        //    .WriteTo.File(
-        //        path: "logs/agents-.log",
-        //        rollingInterval: Serilog.RollingInterval.Day,
-        //        outputTemplate: "{Timestamp:HH:mm:ss.fff} [{Level:u3}] [CON] {Message:lj}{NewLine}",
-        //        shared: true)
-        //    .CreateLogger();
-
-        //Console.SetOut(new SerilogTeeTextWriter(Console.Out, teeFileLogger));
-        //Console.SetError(new SerilogTeeTextWriter(Console.Error, teeFileLogger, Serilog.Events.LogEventLevel.Warning));
-
         try
         {
             var services = new ServiceCollection();
@@ -53,7 +40,9 @@ internal static class Program
             try
             {
                 var orchestrator = serviceProvider.GetRequiredService<IWorkflowOrchestrator>();
-                var path = args.Length > 0 ? args[0] : "workflow-deep-research.json";
+                var path = args.Length > 0
+                    ? args[0]
+                    : configuration["WorkflowSettings:DefaultConfigPath"] ?? "workflow-deep-research.json";
                 Console.WriteLine($"Loading workflow configuration from: {path}\n");
                 await orchestrator.ExecuteWorkflowFromJsonAsync(path, cts.Token);
                 Console.WriteLine("\n=== Workflow Execution Completed ===");
@@ -75,7 +64,6 @@ internal static class Program
         }
         finally
         {
-            //(teeFileLogger as IDisposable)?.Dispose();
             Log.CloseAndFlush();
         }
     }
@@ -112,10 +100,24 @@ internal static class Program
         services.AddSingleton<IAgentPlugin, Plugins.WeatherPlugin>();
         services.AddSingleton<IAgentPlugin, Plugins.TimePlugin>();
 
-        // DeepResearch wiring
+        // LLM clients and workflow executors (strategy per workflowType)
+        services.AddSingleton<IChatClientProvider, ChatClientProvider>();
+        services.AddSingleton<Services.Executors.AgentTeamBuilder>();
+        services.AddSingleton<Services.Executors.SimulatedWorkflowExecutor>();
+        services.AddSingleton<IWorkflowExecutor, Services.Executors.SequentialWorkflowExecutor>();
+        services.AddSingleton<IWorkflowExecutor, Services.Executors.ConcurrentWorkflowExecutor>();
+        services.AddSingleton<IWorkflowExecutor, Services.Executors.MagenticWorkflowExecutor>();
+        services.AddSingleton<IWorkflowExecutor, Services.Executors.DeepResearchWorkflowExecutor>();
+
+        // Web-search plugins
         services.Configure<SerperConfiguration>(configuration.GetSection("Serper"));
         services.AddHttpClient("serper");
         services.AddSingleton<IAgentPlugin, Plugins.SerperSearchPlugin>();
+        services.Configure<TavilyConfiguration>(configuration.GetSection("Tavily"));
+        services.AddHttpClient("tavily");
+        services.AddSingleton<IAgentPlugin, Plugins.TavilySearchPlugin>();
+
+        // DeepResearch wiring
         services.AddSingleton<IAgentFactory, AgentFactory>();
         services.AddSingleton<IDeepResearchOrchestrator, DeepResearchOrchestrator>();
     }

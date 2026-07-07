@@ -15,4 +15,10 @@ public class AgentConfiguration
     public List<string> Plugins { get; set; } = new();
     public bool EnableThinking { get; set; } = false;
     public int ThinkingBudgetTokens { get; set; } = 1024;
+
+    /// <summary>Optional cap on model output tokens; null keeps provider default.</summary>
+    public int? MaxOutputTokens { get; set; }
+
+    /// <summary>Optional sampling temperature; null keeps provider default.</summary>
+    public float? Temperature { get; set; }
 }

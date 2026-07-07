@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AiAgetnsWorkflow.Tests.Integration;
 
-[Trait("Category", "Integration")]
+[Category("Integration")]
 public class McpClientPoolStdioTests
 {
     private static McpServerConfiguration FakeServer() => new()
@@ -17,7 +17,8 @@ public class McpClientPoolStdioTests
         StartupTimeoutSeconds = 30
     };
 
-    [Fact(Timeout = 60_000)]
+    [Test]
+    [Timeout(60_000)]
     public async Task GetTools_StartsServerAndExposesEchoAndAdd()
     {
         await using var pool = new McpClientPool(NullLogger<McpClientPool>.Instance);
@@ -28,7 +29,8 @@ public class McpClientPoolStdioTests
         tools.Select(t => t.Name).Should().Contain(new[] { "Echo", "Add" });
     }
 
-    [Fact(Timeout = 60_000)]
+    [Test]
+    [Timeout(60_000)]
     public async Task EchoTool_InvokeReturnsInput()
     {
         await using var pool = new McpClientPool(NullLogger<McpClientPool>.Instance);

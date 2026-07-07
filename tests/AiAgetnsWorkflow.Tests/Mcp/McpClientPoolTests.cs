@@ -15,7 +15,7 @@ public class McpClientPoolTests
         Command = "noop"
     };
 
-    [Fact]
+    [Test]
     public async Task Register_DoesNotStartClients()
     {
         var calls = 0;
@@ -26,7 +26,7 @@ public class McpClientPoolTests
         calls.Should().Be(0);
     }
 
-    [Fact]
+    [Test]
     public async Task GetTools_FirstAccess_StartsClientOnce()
     {
         var calls = 0;
@@ -39,7 +39,7 @@ public class McpClientPoolTests
         calls.Should().Be(1);
     }
 
-    [Fact]
+    [Test]
     public async Task GetTools_UnknownName_Throws()
     {
         var pool = new McpClientPool(NullLogger<McpClientPool>.Instance,
@@ -50,7 +50,7 @@ public class McpClientPoolTests
         await act.Should().ThrowAsync<KeyNotFoundException>().WithMessage("*B*");
     }
 
-    [Fact]
+    [Test]
     public async Task Dispose_DisposesAllStartedClients()
     {
         var disposed = false;
@@ -63,7 +63,7 @@ public class McpClientPoolTests
         disposed.Should().BeTrue();
     }
 
-    [Fact]
+    [Test]
     public async Task GetTools_FactoryThrows_WrapsInStartupException()
     {
         var pool = new McpClientPool(NullLogger<McpClientPool>.Instance,

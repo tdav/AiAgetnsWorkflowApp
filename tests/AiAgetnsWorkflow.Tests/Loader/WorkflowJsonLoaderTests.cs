@@ -20,7 +20,7 @@ public class WorkflowJsonLoaderTests : IDisposable
     private static string Path(string fileName)
         => System.IO.Path.Combine(AppContext.BaseDirectory, "TestData", fileName);
 
-    [Fact]
+    [Test]
     public async Task LoadAsync_ValidMcpConfig_ParsesAndSubstitutesEnv()
     {
         var cfg = await CreateLoader().LoadConfigurationAsync(Path("workflow-with-mcp.json"));
@@ -29,35 +29,35 @@ public class WorkflowJsonLoaderTests : IDisposable
         cfg.Agents[0].McpServers.Should().BeEquivalentTo(new[] { "filesystem" });
     }
 
-    [Fact]
+    [Test]
     public async Task LoadAsync_MissingMcpRef_ThrowsValidation()
     {
         var act = () => CreateLoader().LoadConfigurationAsync(Path("workflow-invalid-missing-mcp-ref.json"));
         await act.Should().ThrowAsync<WorkflowValidationException>().WithMessage("*nope*");
     }
 
-    [Fact]
+    [Test]
     public async Task LoadAsync_StdioWithoutCommand_ThrowsValidation()
     {
         var act = () => CreateLoader().LoadConfigurationAsync(Path("workflow-invalid-stdio-no-command.json"));
         await act.Should().ThrowAsync<WorkflowValidationException>().WithMessage("*command*");
     }
 
-    [Fact]
+    [Test]
     public async Task LoadAsync_HttpWithoutUrl_ThrowsValidation()
     {
         var act = () => CreateLoader().LoadConfigurationAsync(Path("workflow-invalid-http-no-url.json"));
         await act.Should().ThrowAsync<WorkflowValidationException>().WithMessage("*url*");
     }
 
-    [Fact]
+    [Test]
     public async Task LoadAsync_DuplicateMcpName_ThrowsValidation()
     {
         var act = () => CreateLoader().LoadConfigurationAsync(Path("workflow-invalid-duplicate-mcp.json"));
         await act.Should().ThrowAsync<WorkflowValidationException>().WithMessage("*duplicate*");
     }
 
-    [Fact]
+    [Test]
     public async Task LoadAsync_UnknownTransport_ThrowsValidation()
     {
         var act = () => CreateLoader().LoadConfigurationAsync(Path("workflow-invalid-bad-transport.json"));
