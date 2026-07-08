@@ -347,6 +347,8 @@ Pipeline A→B→C через `edges`. Выход одного агента → 
 ```
 
 > **Замечание:** MCP- и plugin-инструменты (`AIFunction`) пробрасываются в Kernel каждого SK-агента через `AsKernelFunction()` как плагин `AgentTools` с `FunctionChoiceBehavior.Auto`. Hosted tools (`CodeInterpreter`) в SK не пробрасываются — пишется warning. SK/magentic-путь не проходит через токен-тримминг (ограничен `maxRoundCount` менеджера).
+>
+> ⚠️ **Требование к модели менеджера:** `StandardMagenticManager` использует `response_format: json_object` — модель менеджера обязана надёжно возвращать структурированный JSON. Это работает с OpenAI, но **не** с рядом Ollama-моделей (напр. `gpt-oss:120b-cloud` возвращает markdown → `JsonException` в `EvaluateTaskProgressAsync` → менеджер исчерпывает `maxResetCount` и завершается без результата). Проброс инструментов при этом работает корректно (в логах `bridged N tool(s) into SemanticKernel`) — блокирует именно управляющий цикл менеджера. Для Magentic на Ollama выбирайте модель с надёжной поддержкой JSON-формата; проброс инструментов проверен end-to-end на Sequential/Conditional-путях.
 
 ## 📊 Формат JSON конфигурации
 
