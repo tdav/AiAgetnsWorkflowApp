@@ -10,4 +10,5 @@
     <Project Path="tests/FakeMcpServer/FakeMcpServer.csproj" />
   </Folder>
   <Project Path="Gemma/Gemma.csproj" Id="fb749624-24e2-426d-a31a-c0fc23b56294" />
+  <Project Path="Logic-Test/Logic-Test.csproj" Id="bfde2a5c-e668-41fb-949c-bc5569bc7fae" />
 </Solution>

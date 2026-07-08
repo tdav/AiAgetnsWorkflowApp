@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Logic_Test</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="LogicGrid.Core" Version="0.1.4-beta" />
+    <PackageReference Include="LogicGrid.Mcp" Version="0.1.4-beta" />
+    <PackageReference Include="LogicGrid.Memory" Version="0.1.4-beta" />
+    <PackageReference Include="LogicGrid.Rag" Version="0.1.4-beta" />
+    <PackageReference Include="LogicGrid.Tools" Version="0.1.4-beta" />
+  </ItemGroup>
+
+</Project>
